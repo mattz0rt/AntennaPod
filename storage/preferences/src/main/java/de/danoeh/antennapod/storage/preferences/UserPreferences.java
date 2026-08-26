@@ -104,6 +104,13 @@ public abstract class UserPreferences {
     public static final String PREF_AUTODL_GLOBAL = "prefEnableAutoDl";
     public static final String PREF_AUTODL_QUEUE = "prefEnableAutoDlQueue";
     public static final String PREF_ENABLE_AUTODL_ON_BATTERY = "prefEnableAutoDownloadOnBattery";
+    public static final String PREF_AUTODL_SCHEDULED = "prefAutoDownloadScheduled";
+    public static final String PREF_AUTODL_TIME = "prefAutoDownloadTime";
+    public static final String PREF_EPISODE_SUMMARIES_ENABLED = "prefEpisodeSummariesEnabled";
+    public static final String PREF_EPISODE_SUMMARY_LENGTH = "prefEpisodeSummaryLength";
+    public static final String PREF_EPISODE_SUMMARY_PROMPT = "prefEpisodeSummaryPrompt";
+    public static final String PREF_GROQ_API_KEY = "prefGroqApiKey";
+    public static final String PREF_GEMINI_API_KEY = "prefGeminiApiKey";
     private static final String PREF_PROXY_TYPE = "prefProxyType";
     private static final String PREF_PROXY_HOST = "prefProxyHost";
     private static final String PREF_PROXY_PORT = "prefProxyPort";
@@ -372,6 +379,31 @@ public abstract class UserPreferences {
         return prefs.getBoolean(PREF_ENQUEUE_DOWNLOADED, true);
     }
 
+    public static boolean isEpisodeSummaryEnabled() {
+        return prefs.getBoolean(PREF_EPISODE_SUMMARIES_ENABLED, false);
+    }
+
+    public static int getEpisodeSummaryLengthMinutes() {
+        try {
+            return Math.max(1, Math.min(10, Integer.parseInt(
+                    prefs.getString(PREF_EPISODE_SUMMARY_LENGTH, "1"))));
+        } catch (NumberFormatException e) {
+            return 1;
+        }
+    }
+
+    public static String getEpisodeSummaryPrompt() {
+        return prefs.getString(PREF_EPISODE_SUMMARY_PROMPT, "");
+    }
+
+    public static String getGroqApiKey() {
+        return prefs.getString(PREF_GROQ_API_KEY, "").trim();
+    }
+
+    public static String getGeminiApiKey() {
+        return prefs.getString(PREF_GEMINI_API_KEY, "").trim();
+    }
+
     public enum EnqueueLocation {
         BACK, FRONT, AFTER_CURRENTLY_PLAYING, RANDOM
     }
@@ -577,6 +609,18 @@ public abstract class UserPreferences {
 
     public static boolean isEnableAutodownloadOnBattery() {
         return prefs.getBoolean(PREF_ENABLE_AUTODL_ON_BATTERY, true);
+    }
+
+    public static boolean isAutodownloadScheduled() {
+        return prefs.getBoolean(PREF_AUTODL_SCHEDULED, false);
+    }
+
+    public static int getAutodownloadTimeMinutes() {
+        return Math.max(0, Math.min(1439, prefs.getInt(PREF_AUTODL_TIME, 120)));
+    }
+
+    public static void setAutodownloadTimeMinutes(int minutes) {
+        prefs.edit().putInt(PREF_AUTODL_TIME, Math.max(0, Math.min(1439, minutes))).apply();
     }
 
     public static int getFastForwardSecs() {

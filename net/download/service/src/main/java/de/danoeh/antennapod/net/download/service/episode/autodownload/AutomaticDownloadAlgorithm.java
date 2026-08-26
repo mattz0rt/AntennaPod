@@ -37,7 +37,14 @@ public class AutomaticDownloadAlgorithm {
      * @return A Runnable that will be submitted to an ExecutorService.
      */
     public Runnable autoDownloadUndownloadedItems(final Context context) {
+        return autoDownloadUndownloadedItems(context, false);
+    }
+
+    public Runnable autoDownloadUndownloadedItems(final Context context, boolean scheduled) {
         return () -> {
+            if (UserPreferences.isAutodownloadScheduled() && !scheduled) {
+                return;
+            }
 
             // true if we should auto download based on network status
             boolean networkShouldAutoDl = NetworkUtils.isAutoDownloadAllowed();

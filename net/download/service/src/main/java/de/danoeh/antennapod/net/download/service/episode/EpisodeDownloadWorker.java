@@ -32,6 +32,7 @@ import de.danoeh.antennapod.model.download.DownloadRequest;
 import de.danoeh.antennapod.net.download.serviceinterface.DownloadServiceInterface;
 import de.danoeh.antennapod.ui.appstartintent.MainActivityStarter;
 import de.danoeh.antennapod.ui.notifications.NotificationUtils;
+import de.danoeh.antennapod.storage.preferences.UserPreferences;
 import org.apache.commons.io.FileUtils;
 import org.greenrobot.eventbus.EventBus;
 
@@ -191,6 +192,13 @@ public class EpisodeDownloadWorker extends Worker {
                     getApplicationContext(), downloader.getResult(), request);
             handler.run();
             DBWriter.addDownloadStatus(handler.getUpdatedStatus());
+            FeedMedia downloadedMedia = DBReader.getFeedMedia(request.getFeedfileId());
+            if (downloadedMedia != null && downloadedMedia.getItem() != null
+                    && downloadedMedia.getItem().getFeed() != null
+                    && downloadedMedia.getItem().getFeed().getPreferences()
+                            .isEpisodeSummaryEnabled(UserPreferences.isEpisodeSummaryEnabled())) {
+                EpisodeSummaryWorker.enqueue(getApplicationContext(), downloadedMedia);
+            }
             DownloadAnnouncer.announceCompleted(getApplicationContext(), request.getTitle());
             return Result.success();
         }

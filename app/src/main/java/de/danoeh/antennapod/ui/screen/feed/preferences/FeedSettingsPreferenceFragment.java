@@ -60,6 +60,7 @@ public class FeedSettingsPreferenceFragment extends PreferenceFragmentCompat {
     private static final String EXTRA_FEED_ID = "de.danoeh.antennapod.extra.feedId";
     private static final String PREF_EPISODE_FILTER = "episodeFilter";
     private static final String PREF_AUTODOWNLOAD = "includeAutoDownload";
+    private static final String PREF_EPISODE_SUMMARIES = "episodeSummaries";
     private static final String PREF_SCREEN = "feedSettingsScreen";
     private static final String PREF_AUTHENTICATION = "authentication";
     private static final String PREF_AUTO_DELETE = "autoDelete";
@@ -140,12 +141,14 @@ public class FeedSettingsPreferenceFragment extends PreferenceFragmentCompat {
                     setupPreferences();
                     updateAutoDeleteSummary();
                     updateAutoDownloadEnabledSummary();
+                    updateEpisodeSummaryEnabledSummary();
                     updateNewEpisodesActionSummary();
 
                     findPreference(PREF_RECONNECT_LOCAL_FOLDER).setVisible(feed.isLocalFeed());
                     if (feed.isLocalFeed()) {
                         findPreference(PREF_AUTHENTICATION).setVisible(false);
                         findPreference(PREF_AUTODOWNLOAD).setVisible(false);
+                        findPreference(PREF_EPISODE_SUMMARIES).setVisible(false);
                         findPreference(PREF_EPISODE_FILTER).setVisible(false);
                         findPreference(PREF_EDIT_FEED_URL).setVisible(false);
                     }
@@ -260,6 +263,13 @@ public class FeedSettingsPreferenceFragment extends PreferenceFragmentCompat {
             updateNewEpisodesActionSummary();
             return false;
         });
+        findPreference(PREF_EPISODE_SUMMARIES).setOnPreferenceChangeListener((preference, newValue) -> {
+            feedPreferences.setEpisodeSummary(
+                    FeedPreferences.EpisodeSummarySetting.fromInteger(Integer.parseInt((String) newValue)));
+            DBWriter.setFeedPreferences(feedPreferences);
+            updateEpisodeSummaryEnabledSummary();
+            return false;
+        });
         findPreference(PREF_TAGS).setOnPreferenceClickListener(preference -> {
             TagSettingsDialog.newInstance(Collections.singletonList(feedPreferences))
                     .show(getChildFragmentManager(), TagSettingsDialog.TAG);
@@ -364,6 +374,22 @@ public class FeedSettingsPreferenceFragment extends PreferenceFragmentCompat {
         };
         autoDownloadPreference.setSummary(summary);
         autoDownloadPreference.setValue("" + feedPreferences.getAutoDownload().code);
+    }
+
+    private void updateEpisodeSummaryEnabledSummary() {
+        if (feed == null || feed.getPreferences() == null) {
+            return;
+        }
+        boolean enabled = feedPreferences.isEpisodeSummaryEnabled(UserPreferences.isEpisodeSummaryEnabled());
+        ListPreference preference = findPreference(PREF_EPISODE_SUMMARIES);
+        String summary = switch (feedPreferences.getEpisodeSummary()) {
+            case GLOBAL -> getString(R.string.global_default_with_value,
+                    getString(enabled ? R.string.enabled : R.string.disabled));
+            case ENABLED -> getString(R.string.enabled);
+            case DISABLED -> getString(R.string.disabled);
+        };
+        preference.setSummary(summary);
+        preference.setValue("" + feedPreferences.getEpisodeSummary().code);
     }
 
     private void addLocalFolderResult(final Uri uri) {

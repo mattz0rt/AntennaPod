@@ -32,6 +32,8 @@ import java.util.Map;
 import java.util.Set;
 
 import de.danoeh.antennapod.model.feed.Chapter;
+import de.danoeh.antennapod.model.feed.EpisodeSummary;
+import de.danoeh.antennapod.model.feed.EpisodeTopic;
 import de.danoeh.antennapod.model.feed.Feed;
 import de.danoeh.antennapod.model.feed.FeedItem;
 import de.danoeh.antennapod.model.feed.FeedItemFilter;
@@ -44,6 +46,9 @@ import de.danoeh.antennapod.storage.database.mapper.FeedItemSortQuery;
 
 import de.danoeh.antennapod.system.utils.ThreadUtils;
 import org.apache.commons.io.FileUtils;
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
 
 import static de.danoeh.antennapod.model.feed.FeedPreferences.SPEED_USE_GLOBAL;
 import static de.danoeh.antennapod.model.feed.SortOrder.toCodeString;
@@ -55,7 +60,7 @@ public class PodDBAdapter {
 
     private static final String TAG = "PodDBAdapter";
     public static final String DATABASE_NAME = "Antennapod.db";
-    public static final int VERSION = 3110000;
+    public static final int VERSION = 3130000;
 
     /**
      * Maximum number of arguments for IN-operator.
@@ -99,6 +104,7 @@ public class PodDBAdapter {
     public static final String KEY_REASON_DETAILED = "reason_detailed";
     public static final String KEY_DOWNLOADSTATUS_TITLE = "title";
     public static final String KEY_AUTO_DOWNLOAD_ENABLED = "auto_download"; // Both tables use the same key
+    public static final String KEY_EPISODE_SUMMARY = "episode_summary";
     public static final String KEY_KEEP_UPDATED = "keep_updated";
     public static final String KEY_AUTO_DELETE_ACTION = "auto_delete_action";
     public static final String KEY_FEED_VOLUME_ADAPTION = "feed_volume_adaption";
@@ -128,6 +134,9 @@ public class PodDBAdapter {
     public static final String KEY_STATE = "state";
     public static final String KEY_PODCASTINDEX_TRANSCRIPT_URL = "podcastindex_transcript_url";
     public static final String KEY_PODCASTINDEX_TRANSCRIPT_TYPE = "podcastindex_transcript_type";
+    public static final String KEY_SUMMARY = "summary";
+    public static final String KEY_AUDIO_FILE = "audio_file";
+    public static final String KEY_TOPICS = "topics";
 
     // Table names
     public static final String TABLE_NAME_FEEDS = "Feeds";
@@ -138,6 +147,7 @@ public class PodDBAdapter {
     public static final String TABLE_NAME_QUEUE = "Queue";
     public static final String TABLE_NAME_SIMPLECHAPTERS = "SimpleChapters";
     public static final String TABLE_NAME_FAVORITES = "Favorites";
+    public static final String TABLE_NAME_EPISODE_SUMMARIES = "EpisodeSummaries";
 
     // SQL Statements for creating new tables
     private static final String TABLE_PRIMARY_KEY = KEY_ID
@@ -159,6 +169,7 @@ public class PodDBAdapter {
             + KEY_TYPE + " TEXT,"
             + KEY_FEED_IDENTIFIER + " TEXT,"
             + KEY_AUTO_DOWNLOAD_ENABLED + " INTEGER DEFAULT 1,"
+            + KEY_EPISODE_SUMMARY + " INTEGER DEFAULT 1,"
             + KEY_USERNAME + " TEXT,"
             + KEY_PASSWORD + " TEXT,"
             + KEY_INCLUDE_FILTER + " TEXT DEFAULT '',"
@@ -251,6 +262,10 @@ public class PodDBAdapter {
             + TABLE_NAME_FAVORITES + "(" + KEY_ID + " INTEGER PRIMARY KEY,"
             + KEY_FEEDITEM + " INTEGER," + KEY_FEED + " INTEGER)";
 
+    static final String CREATE_TABLE_EPISODE_SUMMARIES = "CREATE TABLE "
+            + TABLE_NAME_EPISODE_SUMMARIES + "(media_id INTEGER PRIMARY KEY,"
+            + KEY_SUMMARY + " TEXT," + KEY_AUDIO_FILE + " TEXT," + KEY_TOPICS + " TEXT)";
+
     /**
      * All the tables in the database
      */
@@ -261,7 +276,8 @@ public class PodDBAdapter {
             TABLE_NAME_DOWNLOAD_LOG,
             TABLE_NAME_QUEUE,
             TABLE_NAME_SIMPLECHAPTERS,
-            TABLE_NAME_FAVORITES
+            TABLE_NAME_FAVORITES,
+            TABLE_NAME_EPISODE_SUMMARIES
     };
 
     public static final String SELECT_KEY_ITEM_ID = "item_id";
@@ -327,6 +343,7 @@ public class PodDBAdapter {
             + TABLE_NAME_FEEDS + "." + KEY_NEXT_PAGE_LINK + ", "
             + TABLE_NAME_FEEDS + "." + KEY_LAST_UPDATE_FAILED + ", "
             + TABLE_NAME_FEEDS + "." + KEY_AUTO_DOWNLOAD_ENABLED + ", "
+            + TABLE_NAME_FEEDS + "." + KEY_EPISODE_SUMMARY + ", "
             + TABLE_NAME_FEEDS + "." + KEY_KEEP_UPDATED + ", "
             + TABLE_NAME_FEEDS + "." + KEY_USERNAME + ", "
             + TABLE_NAME_FEEDS + "." + KEY_PASSWORD + ", "
@@ -496,6 +513,7 @@ public class PodDBAdapter {
         }
         ContentValues values = new ContentValues();
         values.put(KEY_AUTO_DOWNLOAD_ENABLED, prefs.getAutoDownload().code);
+        values.put(KEY_EPISODE_SUMMARY, prefs.getEpisodeSummary().code);
         values.put(KEY_KEEP_UPDATED, prefs.getKeepUpdated());
         values.put(KEY_AUTO_DELETE_ACTION, prefs.getAutoDeleteAction().code);
         values.put(KEY_FEED_VOLUME_ADAPTION, prefs.getVolumeAdaptionSetting().toInteger());
@@ -580,6 +598,56 @@ public class PodDBAdapter {
         } else {
             Log.e(TAG, "setMediaDownloadInformation: ID of media was 0");
         }
+    }
+
+    public void setEpisodeSummary(EpisodeSummary summary) {
+        JSONArray topics = new JSONArray();
+        for (EpisodeTopic topic : summary.getTopics()) {
+            JSONObject value = new JSONObject();
+            try {
+                value.put(KEY_TITLE, topic.getTitle());
+                value.put(KEY_START, topic.getStart());
+                value.put(KEY_DURATION, topic.getEnd());
+                topics.put(value);
+            } catch (JSONException e) {
+                Log.e(TAG, "Could not serialize episode topic", e);
+            }
+        }
+        ContentValues values = new ContentValues();
+        values.put(SELECT_KEY_MEDIA_ID, summary.getMediaId());
+        values.put(KEY_SUMMARY, summary.getText());
+        values.put(KEY_AUDIO_FILE, summary.getAudioFileUrl());
+        values.put(KEY_TOPICS, topics.toString());
+        db.insertWithOnConflict(TABLE_NAME_EPISODE_SUMMARIES, null, values, SQLiteDatabase.CONFLICT_REPLACE);
+    }
+
+    @Nullable
+    public EpisodeSummary getEpisodeSummary(long mediaId) {
+        try (Cursor cursor = db.query(TABLE_NAME_EPISODE_SUMMARIES, null,
+                SELECT_KEY_MEDIA_ID + "=?", new String[]{String.valueOf(mediaId)}, null, null, null)) {
+            if (!cursor.moveToFirst()) {
+                return null;
+            }
+            List<EpisodeTopic> topics = new ArrayList<>();
+            try {
+                JSONArray values = new JSONArray(cursor.getString(cursor.getColumnIndexOrThrow(KEY_TOPICS)));
+                for (int i = 0; i < values.length(); i++) {
+                    JSONObject value = values.getJSONObject(i);
+                    topics.add(new EpisodeTopic(value.getString(KEY_TITLE),
+                            value.getLong(KEY_START), value.getLong(KEY_DURATION)));
+                }
+            } catch (JSONException e) {
+                Log.e(TAG, "Could not parse episode topics", e);
+            }
+            return new EpisodeSummary(mediaId,
+                    cursor.getString(cursor.getColumnIndexOrThrow(KEY_SUMMARY)),
+                    cursor.getString(cursor.getColumnIndexOrThrow(KEY_AUDIO_FILE)), topics);
+        }
+    }
+
+    public void removeEpisodeSummary(long mediaId) {
+        db.delete(TABLE_NAME_EPISODE_SUMMARIES, SELECT_KEY_MEDIA_ID + "=?",
+                new String[]{String.valueOf(mediaId)});
     }
 
     public void setFeedMediaPlaybackInformation(FeedMedia media) {
@@ -934,6 +1002,7 @@ public class PodDBAdapter {
 
             db.beginTransactionNonExclusive();
             db.delete(TABLE_NAME_SIMPLECHAPTERS, KEY_FEEDITEM + " IN (" + itemIds + ")", null);
+            db.delete(TABLE_NAME_EPISODE_SUMMARIES, SELECT_KEY_MEDIA_ID + " IN (" + mediaIds + ")", null);
             db.delete(TABLE_NAME_DOWNLOAD_LOG, KEY_FEEDFILETYPE + "=" + FeedMedia.FEEDFILETYPE_FEEDMEDIA
                             + " AND " + KEY_FEEDFILE + " IN (" + mediaIds + ")", null);
             db.delete(TABLE_NAME_FEED_MEDIA, KEY_ID + " IN (" + mediaIds + ")", null);
@@ -1575,6 +1644,7 @@ public class PodDBAdapter {
             db.execSQL(CREATE_TABLE_QUEUE);
             db.execSQL(CREATE_TABLE_SIMPLECHAPTERS);
             db.execSQL(CREATE_TABLE_FAVORITES);
+            db.execSQL(CREATE_TABLE_EPISODE_SUMMARIES);
 
             db.execSQL(CREATE_INDEX_FEEDITEMS_FEED);
             db.execSQL(CREATE_INDEX_FEEDITEMS_PUBDATE);

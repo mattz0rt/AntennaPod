@@ -83,7 +83,8 @@ public class AudioPlayerFragment extends Fragment implements
     public static final String TAG = "AudioPlayerFragment";
     public static final int POS_COVER = 0;
     public static final int POS_DESCRIPTION = 1;
-    private static final int NUM_CONTENT_FRAGMENTS = 2;
+    public static final int POS_TOPICS = 2;
+    private static final int NUM_CONTENT_FRAGMENTS = 3;
 
     private TextView txtvPlaybackSpeed;
     private ViewPager2 pager;
@@ -510,6 +511,9 @@ public class AudioPlayerFragment extends Fragment implements
             new TranscriptDialogFragment().show(
                     getActivity().getSupportFragmentManager(), TranscriptDialogFragment.TAG);
             return true;
+        } else if (itemId == R.id.episode_topics_item) {
+            scrollToPage(POS_TOPICS, true);
+            return true;
         } else if (itemId == R.id.open_feed_item) {
             if (feedItem != null) {
                 openFeed(feedItem.getFeed());
@@ -555,9 +559,11 @@ public class AudioPlayerFragment extends Fragment implements
             switch (position) {
                 case POS_COVER:
                     return new CoverFragment();
-                default:
                 case POS_DESCRIPTION:
                     return new ItemDescriptionFragment();
+                default:
+                case POS_TOPICS:
+                    return new EpisodeTopicsFragment();
             }
         }
 
@@ -574,9 +580,11 @@ public class AudioPlayerFragment extends Fragment implements
 
         pager.setCurrentItem(page, smoothScroll);
 
-        Fragment visibleChild = getChildFragmentManager().findFragmentByTag("f" + POS_DESCRIPTION);
-        if (visibleChild instanceof ItemDescriptionFragment) {
-            ((ItemDescriptionFragment) visibleChild).scrollToTop();
+        if (page == POS_DESCRIPTION) {
+            Fragment visibleChild = getChildFragmentManager().findFragmentByTag("f" + POS_DESCRIPTION);
+            if (visibleChild instanceof ItemDescriptionFragment) {
+                ((ItemDescriptionFragment) visibleChild).scrollToTop();
+            }
         }
     }
 

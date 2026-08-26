@@ -18,6 +18,7 @@ import java.util.HashSet;
 public class FeedPreferencesCursor extends CursorWrapper {
     private final int indexId;
     private final int indexAutoDownload;
+    private final int indexEpisodeSummary;
     private final int indexAutoRefresh;
     private final int indexAutoDeleteAction;
     private final int indexVolumeAdaption;
@@ -38,6 +39,7 @@ public class FeedPreferencesCursor extends CursorWrapper {
         super(cursor);
         indexId = cursor.getColumnIndexOrThrow(PodDBAdapter.SELECT_KEY_FEED_ID);
         indexAutoDownload = cursor.getColumnIndexOrThrow(PodDBAdapter.KEY_AUTO_DOWNLOAD_ENABLED);
+        indexEpisodeSummary = cursor.getColumnIndexOrThrow(PodDBAdapter.KEY_EPISODE_SUMMARY);
         indexAutoRefresh = cursor.getColumnIndexOrThrow(PodDBAdapter.KEY_KEEP_UPDATED);
         indexAutoDeleteAction = cursor.getColumnIndexOrThrow(PodDBAdapter.KEY_AUTO_DELETE_ACTION);
         indexVolumeAdaption = cursor.getColumnIndexOrThrow(PodDBAdapter.KEY_FEED_VOLUME_ADAPTION);
@@ -80,6 +82,7 @@ public class FeedPreferencesCursor extends CursorWrapper {
                 FeedPreferences.SkipSilence.fromCode(getInt(indexFeedSkipSilence)),
                 getInt(indexEpisodeNotification) > 0,
                 FeedPreferences.NewEpisodesAction.fromCode(getInt(indexNewEpisodesAction)),
-                new HashSet<>(Arrays.asList(tagsString.split(FeedPreferences.TAG_SEPARATOR))));
+                new HashSet<>(Arrays.asList(tagsString.split(FeedPreferences.TAG_SEPARATOR))),
+                FeedPreferences.EpisodeSummarySetting.fromInteger(getInt(indexEpisodeSummary)));
     }
 }

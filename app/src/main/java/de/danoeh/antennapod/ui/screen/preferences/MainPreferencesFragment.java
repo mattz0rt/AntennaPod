@@ -24,6 +24,7 @@ public class MainPreferencesFragment extends AnimatedPreferenceFragment {
     private static final String PREF_SCREEN_USER_INTERFACE = "prefScreenInterface";
     private static final String PREF_SCREEN_PLAYBACK = "prefScreenPlayback";
     private static final String PREF_SCREEN_DOWNLOADS = "prefScreenDownloads";
+    private static final String PREF_SCREEN_EPISODE_SUMMARIES = "prefScreenEpisodeSummaries";
     private static final String PREF_SCREEN_IMPORT_EXPORT = "prefScreenImportExport";
     private static final String PREF_SCREEN_SYNCHRONIZATION = "prefScreenSynchronization";
     private static final String PREF_DOCUMENTATION = "prefDocumentation";
@@ -86,6 +87,10 @@ public class MainPreferencesFragment extends AnimatedPreferenceFragment {
         });
         findPreference(PREF_SCREEN_DOWNLOADS).setOnPreferenceClickListener(preference -> {
             ((PreferenceActivity) getActivity()).openScreen(R.xml.preferences_downloads);
+            return true;
+        });
+        findPreference(PREF_SCREEN_EPISODE_SUMMARIES).setOnPreferenceClickListener(preference -> {
+            ((PreferenceActivity) getActivity()).openScreen(R.xml.preferences_episode_summaries);
             return true;
         });
         findPreference(PREF_SCREEN_SYNCHRONIZATION).setOnPreferenceClickListener(preference -> {
@@ -160,6 +165,8 @@ public class MainPreferencesFragment extends AnimatedPreferenceFragment {
                 .addBreadcrumb(PreferenceActivity.getTitleOfPage(R.xml.preferences_playback));
         config.index(R.xml.preferences_downloads)
                 .addBreadcrumb(PreferenceActivity.getTitleOfPage(R.xml.preferences_downloads));
+        config.index(R.xml.preferences_episode_summaries)
+                .addBreadcrumb(PreferenceActivity.getTitleOfPage(R.xml.preferences_episode_summaries));
         config.index(R.xml.preferences_import_export)
                 .addBreadcrumb(PreferenceActivity.getTitleOfPage(R.xml.preferences_import_export));
         config.index(R.xml.preferences_autodownload)

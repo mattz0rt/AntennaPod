@@ -23,6 +23,7 @@ dependencies {
     annotationProcessor libs.androidx.annotation
     implementation libs.commons.io
     implementation libs.commons.lang3
+    implementation libs.jsoup
     implementation libs.okhttp
 
     testImplementation libs.androidx.test.core

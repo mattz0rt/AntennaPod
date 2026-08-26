@@ -11,3 +11,10 @@ The `MediaController` exposes the standard Media3 `Player` interface: `seekTo(po
 `play()`, `pause()`, `getCurrentPosition()`, `getPlaybackParameters()`, etc.
 Each call to `bindToMedia3Service()` creates a short-lived connection that is released after the
 callback returns.
+
+Media-library actions on browse items must be declared with `setCommandButtonsForMediaItems()`,
+granted to controllers in `onConnect()`, and advertised through `MediaMetadata.supportedCommands`.
+The selected item ID is delivered to `onCustomCommand()` in `MediaConstants.EXTRA_KEY_MEDIA_ID`.
+
+Narrated episode summaries are inserted before queued episodes only when the summary audio file
+exists and the podcast's summary preference, resolved against the global default, is enabled.

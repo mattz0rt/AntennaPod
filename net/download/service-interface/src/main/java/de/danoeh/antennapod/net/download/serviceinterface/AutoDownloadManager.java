@@ -27,6 +27,10 @@ public abstract class AutoDownloadManager {
      */
     public abstract Future<?> autodownloadUndownloadedItems(final Context context);
 
+    public abstract Future<?> runScheduledDownload(final Context context);
+
+    public abstract void restartSchedule(final Context context, boolean replace);
+
     /**
      * Removed downloaded episodes outside of the queue if the episode cache is full. Episodes with a smaller
      * 'lastPlayedTimeHistory'-value will be deleted first.

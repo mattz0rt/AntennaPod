@@ -15,6 +15,7 @@ import com.google.common.util.concurrent.Futures;
 import de.danoeh.antennapod.event.DownloadLogEvent;
 
 import de.danoeh.antennapod.model.feed.FeedItemFilter;
+import de.danoeh.antennapod.model.feed.EpisodeSummary;
 import de.danoeh.antennapod.net.download.serviceinterface.AutoDownloadManager;
 import de.danoeh.antennapod.net.download.serviceinterface.DownloadServiceInterface;
 import de.danoeh.antennapod.net.download.serviceinterface.FeedUpdateManager;
@@ -119,6 +120,7 @@ public class DBWriter {
         Log.i(TAG, String.format(Locale.US, "Requested to delete FeedMedia [id=%d, title=%s, downloaded=%s",
                 media.getId(), media.getEpisodeTitle(), media.isDownloaded()));
         boolean localDelete = false;
+        deleteEpisodeSummarySynchronous(media.getId());
         if (media.getLocalFileUrl() != null && media.getLocalFileUrl().startsWith("content://")) {
             // Local feed
             DocumentFile documentFile = DocumentFile.fromSingleUri(context, Uri.parse(media.getLocalFileUrl()));
@@ -166,6 +168,20 @@ public class DBWriter {
                             .build());
             }
         }
+    }
+
+    private static void deleteEpisodeSummarySynchronous(long mediaId) {
+        EpisodeSummary summary = DBReader.getEpisodeSummary(mediaId);
+        if (summary != null && summary.getAudioFileUrl() != null) {
+            File summaryFile = new File(summary.getAudioFileUrl());
+            if (summaryFile.exists() && !summaryFile.delete()) {
+                Log.d(TAG, "Deletion of episode summary failed.");
+            }
+        }
+        PodDBAdapter adapter = PodDBAdapter.getInstance();
+        adapter.open();
+        adapter.removeEpisodeSummary(mediaId);
+        adapter.close();
     }
 
     /**
@@ -218,6 +234,9 @@ public class DBWriter {
                 removedFromQueue.add(item);
             }
             if (item.getMedia() != null) {
+                if (!item.getMedia().isDownloaded() || item.getFeed().isLocalFeed()) {
+                    deleteEpisodeSummarySynchronous(item.getMedia().getId());
+                }
                 if (item.getMedia().getId() == PlaybackPreferences.getCurrentlyPlayingFeedMediaId()) {
                     // Applies to both downloaded and streamed media
                     PlaybackPreferences.writeNoMediaPlaying();
@@ -744,6 +763,25 @@ public class DBWriter {
             adapter.setMedia(media);
             adapter.close();
         });
+    }
+
+    public static Future<Boolean> setEpisodeSummary(final EpisodeSummary summary) {
+        if ("DatabaseExecutor".equals(Thread.currentThread().getName())) {
+            return Futures.immediateFuture(setEpisodeSummarySynchronous(summary));
+        }
+        return dbExec.submit(() -> setEpisodeSummarySynchronous(summary));
+    }
+
+    private static boolean setEpisodeSummarySynchronous(final EpisodeSummary summary) {
+        FeedMedia media = DBReader.getFeedMedia(summary.getMediaId());
+        if (media == null || !media.localFileAvailable()) {
+            return false;
+        }
+        PodDBAdapter adapter = PodDBAdapter.getInstance();
+        adapter.open();
+        adapter.setEpisodeSummary(summary);
+        adapter.close();
+        return true;
     }
 
     /**

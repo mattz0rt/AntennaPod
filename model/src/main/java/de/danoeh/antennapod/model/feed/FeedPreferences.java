@@ -107,10 +107,32 @@ public class FeedPreferences implements Serializable {
         }
     }
 
+    public enum EpisodeSummarySetting {
+        DISABLED(0),
+        ENABLED(2),
+        GLOBAL(1);
+
+        public final int code;
+
+        EpisodeSummarySetting(int code) {
+            this.code = code;
+        }
+
+        public static EpisodeSummarySetting fromInteger(int code) {
+            for (EpisodeSummarySetting setting : values()) {
+                if (code == setting.code) {
+                    return setting;
+                }
+            }
+            return GLOBAL;
+        }
+    }
+
     @NonNull
     private FeedFilter filter;
     private long feedID;
     private AutoDownloadSetting autoDownload;
+    private EpisodeSummarySetting episodeSummary;
     private boolean keepUpdated;
     private AutoDeleteAction autoDeleteAction;
     private VolumeAdaptionSetting volumeAdaptionSetting;
@@ -138,8 +160,20 @@ public class FeedPreferences implements Serializable {
                             float feedPlaybackSpeed, int feedSkipIntro, int feedSkipEnding, SkipSilence feedSkipSilence,
                             boolean showEpisodeNotification, NewEpisodesAction newEpisodesAction,
                             Set<String> tags) {
+        this(feedID, autoDownload, keepUpdated, autoDeleteAction, volumeAdaptionSetting, username, password,
+                filter, feedPlaybackSpeed, feedSkipIntro, feedSkipEnding, feedSkipSilence,
+                showEpisodeNotification, newEpisodesAction, tags, EpisodeSummarySetting.GLOBAL);
+    }
+
+    public FeedPreferences(long feedID, AutoDownloadSetting autoDownload, boolean keepUpdated,
+                            AutoDeleteAction autoDeleteAction, VolumeAdaptionSetting volumeAdaptionSetting,
+                            String username, String password, @NonNull FeedFilter filter,
+                            float feedPlaybackSpeed, int feedSkipIntro, int feedSkipEnding, SkipSilence feedSkipSilence,
+                            boolean showEpisodeNotification, NewEpisodesAction newEpisodesAction,
+                            Set<String> tags, EpisodeSummarySetting episodeSummary) {
         this.feedID = feedID;
         this.autoDownload = autoDownload;
+        this.episodeSummary = episodeSummary;
         this.keepUpdated = keepUpdated;
         this.autoDeleteAction = autoDeleteAction;
         this.volumeAdaptionSetting = volumeAdaptionSetting;
@@ -221,6 +255,22 @@ public class FeedPreferences implements Serializable {
 
     public void setAutoDownload(AutoDownloadSetting setting) {
         this.autoDownload = setting;
+    }
+
+    public boolean isEpisodeSummaryEnabled(boolean globalDefault) {
+        return switch (getEpisodeSummary()) {
+            case ENABLED -> true;
+            case DISABLED -> false;
+            default -> globalDefault;
+        };
+    }
+
+    public EpisodeSummarySetting getEpisodeSummary() {
+        return episodeSummary == null ? EpisodeSummarySetting.GLOBAL : episodeSummary;
+    }
+
+    public void setEpisodeSummary(EpisodeSummarySetting setting) {
+        episodeSummary = setting;
     }
 
     public AutoDeleteAction getAutoDeleteAction() {

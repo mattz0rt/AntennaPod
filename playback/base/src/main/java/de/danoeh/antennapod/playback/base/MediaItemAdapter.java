@@ -16,20 +16,29 @@ import androidx.media3.common.MediaMetadata;
 import com.bumptech.glide.Glide;
 import com.google.common.collect.ImmutableList;
 import de.danoeh.antennapod.model.feed.Feed;
+import de.danoeh.antennapod.model.feed.EpisodeSummary;
+import de.danoeh.antennapod.model.feed.EpisodeTopic;
 import de.danoeh.antennapod.model.feed.FeedItem;
 import de.danoeh.antennapod.model.feed.FeedMedia;
 import de.danoeh.antennapod.model.feed.FeedPreferences;
 import de.danoeh.antennapod.model.playback.Playable;
 import de.danoeh.antennapod.system.utils.ThreadUtils;
+import de.danoeh.antennapod.ui.i18n.R;
 
 import java.io.ByteArrayOutputStream;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 
 public class MediaItemAdapter {
     private static final String TAG = "MediaItemAdapter";
     public static final String MEDIA_ID_FEED_PREFIX = "FeedId:";
     public static final String MEDIA_ID_CONFIRM_STREAMING = "confirm_streaming";
+    public static final String MEDIA_ID_SUMMARY_PREFIX = "summary:";
+    public static final String MEDIA_ID_TOPICS_PREFIX = "topics:";
+    public static final String MEDIA_ID_TOPIC_PREFIX = "topic:";
+    public static final String MEDIA_ID_NEXT_PREFIX = "next:";
+    public static final String COMMAND_PLAY_BROWSE_ITEM = "play_browse_item";
     public static final String KEY_STREAM_URL = "stream_url";
     public static final String KEY_AUTHORIZATION_HEADER = "authorization_header";
 
@@ -112,6 +121,79 @@ public class MediaItemAdapter {
                         .setExtras(requestExtras)
                         .build())
                 .build();
+    }
+
+    public static MediaItem fromEpisodeSummary(Context context, FeedMedia media, EpisodeSummary summary) {
+        MediaItem episode = fromPlayable(context, media, false);
+        StringBuilder description = new StringBuilder();
+        for (EpisodeTopic topic : summary.getTopics()) {
+            if (description.length() > 0) {
+                description.append(" · ");
+            }
+            description.append(formatTime(topic.getStart())).append(' ').append(topic.getTitle());
+        }
+        MediaMetadata metadata = episode.mediaMetadata.buildUpon()
+                .setTitle(media.getEpisodeTitle())
+                .setSubtitle(media.getFeedTitle())
+                .setDescription(description.toString())
+                .build();
+        return episode.buildUpon()
+                .setMediaId(MEDIA_ID_SUMMARY_PREFIX + media.getId())
+                .setUri(summary.getAudioFileUrl())
+                .setClippingConfiguration(MediaItem.ClippingConfiguration.UNSET)
+                .setMediaMetadata(metadata)
+                .build();
+    }
+
+    public static MediaItem fromTopicPage(FeedMedia media) {
+        MediaMetadata metadata = new MediaMetadata.Builder()
+                .setTitle(media.getEpisodeTitle())
+                .setSubtitle(media.getFeedTitle())
+                .setIsBrowsable(true)
+                .setIsPlayable(false)
+                .setSupportedCommands(ImmutableList.of(COMMAND_PLAY_BROWSE_ITEM))
+                .build();
+        return new MediaItem.Builder()
+                .setMediaId(MEDIA_ID_TOPICS_PREFIX + media.getId())
+                .setMediaMetadata(metadata)
+                .build();
+    }
+
+    public static MediaItem fromEpisodeTopic(Context context, FeedMedia media, EpisodeTopic topic) {
+        MediaItem episode = fromPlayable(context, media, true);
+        MediaMetadata metadata = episode.mediaMetadata.buildUpon()
+                .setTitle(topic.getTitle())
+                .setSubtitle(formatTime(topic.getStart()) + " · " + media.getEpisodeTitle())
+                .setDescription(media.getFeedTitle())
+                .setSupportedCommands(ImmutableList.of(COMMAND_PLAY_BROWSE_ITEM))
+                .build();
+        return episode.buildUpon()
+                .setMediaId(MEDIA_ID_TOPIC_PREFIX + media.getId() + ":" + topic.getStart() + ":" + topic.getEnd())
+                .setClippingConfiguration(new MediaItem.ClippingConfiguration.Builder()
+                        .setStartPositionMs(topic.getStart())
+                        .setEndPositionMs(topic.getEnd())
+                        .build())
+                .setMediaMetadata(metadata)
+                .build();
+    }
+
+    public static MediaItem fromNextEpisode(Context context, FeedMedia media) {
+        MediaMetadata metadata = new MediaMetadata.Builder()
+                .setTitle(context.getString(R.string.skip_to_next_podcast))
+                .setSubtitle(media.getFeedTitle())
+                .setIsBrowsable(false)
+                .setIsPlayable(true)
+                .setSupportedCommands(ImmutableList.of(COMMAND_PLAY_BROWSE_ITEM))
+                .build();
+        return new MediaItem.Builder()
+                .setMediaId(MEDIA_ID_NEXT_PREFIX + media.getId())
+                .setMediaMetadata(metadata)
+                .build();
+    }
+
+    private static String formatTime(long milliseconds) {
+        long totalSeconds = milliseconds / 1000;
+        return String.format(Locale.getDefault(), "%d:%02d", totalSeconds / 60, totalSeconds % 60);
     }
 
     private static Bitmap loadArtworkBitmap(Context context, Playable playable, int iconSize) {

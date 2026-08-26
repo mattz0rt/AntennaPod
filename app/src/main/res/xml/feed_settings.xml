@@ -85,6 +85,13 @@
             android:key="includeAutoDownload"
             android:title="@string/auto_download_label" />
 
+        <de.danoeh.antennapod.ui.preferences.preference.MaterialListPreference
+            android:entries="@array/spnEnableAutoDownloadItems"
+            android:entryValues="@array/spnEnableAutoDownloadValues"
+            android:icon="@drawable/ic_playlist_play"
+            android:key="episodeSummaries"
+            android:title="@string/episode_summaries_pref" />
+
         <Preference
             android:key="episodeFilter"
             android:summary="@string/episode_filters_description"

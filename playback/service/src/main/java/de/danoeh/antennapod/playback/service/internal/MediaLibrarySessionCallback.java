@@ -8,7 +8,6 @@ import android.view.KeyEvent;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.WorkerThread;
-import androidx.core.util.Pair;
 import androidx.media.utils.MediaConstants;
 import androidx.media3.common.C;
 import androidx.media3.common.MediaItem;
@@ -27,11 +26,14 @@ import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.SettableFuture;
 import de.danoeh.antennapod.model.feed.Feed;
+import de.danoeh.antennapod.model.feed.EpisodeSummary;
+import de.danoeh.antennapod.model.feed.EpisodeTopic;
 import de.danoeh.antennapod.model.feed.FeedItem;
 import de.danoeh.antennapod.model.feed.FeedItemFilter;
 import de.danoeh.antennapod.model.feed.FeedMedia;
 import de.danoeh.antennapod.model.feed.SortOrder;
 import de.danoeh.antennapod.playback.base.MediaItemAdapter;
+import de.danoeh.antennapod.playback.service.EpisodeSummaryPlayback;
 import de.danoeh.antennapod.playback.base.RewindAfterPauseUtils;
 import de.danoeh.antennapod.ui.appstartintent.MediaButtonStarter;
 import de.danoeh.antennapod.playback.service.R;
@@ -45,6 +47,8 @@ import io.reactivex.rxjava3.disposables.CompositeDisposable;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 
 import java.util.Collections;
+import java.io.File;
+import java.util.ArrayList;
 import java.util.List;
 
 public class MediaLibrarySessionCallback implements MediaLibraryService.MediaLibrarySession.Callback {
@@ -55,10 +59,11 @@ public class MediaLibrarySessionCallback implements MediaLibraryService.MediaLib
     private static final String MEDIA_ID_EPISODES = "episodes";
     private static final String MEDIA_ID_SUBSCRIPTIONS = "subscriptions";
     private static final String MEDIA_ID_CONTINUE_LISTENING = "continue_listening";
+    private static final String MEDIA_ID_SUMMARIES = "summaries";
     private static final int CONTINUE_LISTENING_NUM_EPISODES = 8;
     private static final ImmutableList<String> BROWSABLE_MEDIA_IDS = ImmutableList.of(
             MEDIA_ID_ROOT, MEDIA_ID_QUEUE, MEDIA_ID_DOWNLOADS, MEDIA_ID_EPISODES,
-            MEDIA_ID_SUBSCRIPTIONS, MEDIA_ID_CONTINUE_LISTENING);
+            MEDIA_ID_SUBSCRIPTIONS, MEDIA_ID_CONTINUE_LISTENING, MEDIA_ID_SUMMARIES);
 
     protected static final SessionCommand SESSION_COMMAND_REWIND
             = new SessionCommand("rewind", Bundle.EMPTY);
@@ -78,6 +83,8 @@ public class MediaLibrarySessionCallback implements MediaLibraryService.MediaLib
             = new SessionCommand("disable_sleep_timer", Bundle.EMPTY);
     public static final SessionCommand SESSION_COMMAND_EXTEND_SLEEP_TIMER
             = new SessionCommand("extend_sleep_timer", Bundle.EMPTY);
+    public static final SessionCommand SESSION_COMMAND_PLAY_BROWSE_ITEM
+            = new SessionCommand(MediaItemAdapter.COMMAND_PLAY_BROWSE_ITEM, Bundle.EMPTY);
 
     private static final String EXTRA_VALUE = "value";
 
@@ -124,6 +131,7 @@ public class MediaLibrarySessionCallback implements MediaLibraryService.MediaLib
                 .add(SESSION_COMMAND_SET_SLEEP_TIMER)
                 .add(SESSION_COMMAND_DISABLE_SLEEP_TIMER)
                 .add(SESSION_COMMAND_EXTEND_SLEEP_TIMER)
+                .add(SESSION_COMMAND_PLAY_BROWSE_ITEM)
                 .build();
         Player.Commands playerCommands = new Player.Commands.Builder()
                 .addAllCommands()
@@ -201,6 +209,14 @@ public class MediaLibrarySessionCallback implements MediaLibraryService.MediaLib
         return buttons.build();
     }
 
+    @UnstableApi
+    public ImmutableList<CommandButton> buildMediaItemCommandButtons() {
+        return ImmutableList.of(new CommandButton.Builder(CommandButton.ICON_PLAY)
+                .setSessionCommand(SESSION_COMMAND_PLAY_BROWSE_ITEM)
+                .setDisplayName(context.getString(R.string.play_label))
+                .build());
+    }
+
     @Override
     @UnstableApi
     public boolean onMediaButtonEvent(@NonNull MediaSession session,
@@ -266,17 +282,50 @@ public class MediaLibrarySessionCallback implements MediaLibraryService.MediaLib
         SettableFuture<MediaSession.MediaItemsWithStartPosition> future = SettableFuture.create();
         disposables.add(Single.fromCallable(
                 () -> {
-                    List<MediaItem> updatedItems = onAddMediaItems(mediaSession, controller, mediaItems).get();
-                    long mediaId = Long.parseLong(updatedItems.get(index).mediaId);
+                    List<MediaItem> requestedItems = mediaItems;
+                    MediaItem selectedItem = mediaItems.get(index);
+                    boolean selectedTopic = selectedItem.mediaId
+                            .startsWith(MediaItemAdapter.MEDIA_ID_TOPIC_PREFIX);
+                    if (selectedItem.mediaId.startsWith(MediaItemAdapter.MEDIA_ID_NEXT_PREFIX)) {
+                        long currentId = getUnderlyingMediaId(selectedItem.mediaId);
+                        FeedMedia current = DBReader.getFeedMedia(currentId);
+                        FeedItem next = current == null ? null : DBReader.getNextInQueue(current.getItem());
+                        if (next == null || next.getMedia() == null) {
+                            return new ResolvedMediaItems(Collections.emptyList(), null, 0, false);
+                        }
+                        requestedItems = Collections.singletonList(
+                                MediaItemAdapter.fromPlayableStub(next.getMedia()));
+                        selectedItem = requestedItems.get(0);
+                    }
+                    List<MediaItem> updatedItems = onAddMediaItems(mediaSession, controller, requestedItems).get();
+                    long mediaId = getUnderlyingMediaId(selectedItem.mediaId);
                     FeedMedia mediaDetails = DBReader.getFeedMedia(mediaId);
-                    return new Pair<>(updatedItems, mediaDetails);
+                    int resolvedIndex = 0;
+                    for (int i = 0; i < updatedItems.size(); i++) {
+                        MediaItem candidate = updatedItems.get(i);
+                        if (getUnderlyingMediaId(candidate.mediaId) == mediaId
+                                && selectedTopic == candidate.mediaId
+                                .startsWith(MediaItemAdapter.MEDIA_ID_TOPIC_PREFIX)) {
+                            resolvedIndex = i;
+                            break;
+                        }
+                    }
+                    return new ResolvedMediaItems(updatedItems, mediaDetails, resolvedIndex, selectedTopic);
                 })
                 .subscribeOn(Schedulers.io())
                 .subscribe(result -> {
-                    long startPosition = SkipUtils.skipIntroIfNecessary(context, result.second);
+                    if (result.items.isEmpty() || result.media == null) {
+                        future.set(new MediaSession.MediaItemsWithStartPosition(
+                                Collections.emptyList(), 0, 0));
+                        return;
+                    }
+                    boolean startsWithSummary = result.items.get(result.startIndex).mediaId
+                            .startsWith(MediaItemAdapter.MEDIA_ID_SUMMARY_PREFIX);
+                    long startPosition = SkipUtils.skipIntroIfNecessary(context, result.media);
                     startPosition = RewindAfterPauseUtils.calculatePositionWithRewind(
-                            (int) startPosition, result.second.getLastPlayedTimeStatistics());
-                    future.set(new MediaSession.MediaItemsWithStartPosition(result.first, index, startPosition));
+                            (int) startPosition, result.media.getLastPlayedTimeStatistics());
+                    future.set(new MediaSession.MediaItemsWithStartPosition(result.items, result.startIndex,
+                            startsWithSummary || result.topic ? 0 : startPosition));
                 }, error -> {
                     Log.e(TAG, "Failed to load media", error);
                     future.set(new MediaSession.MediaItemsWithStartPosition(mediaItems, index, startPositionMs));
@@ -335,11 +384,10 @@ public class MediaLibrarySessionCallback implements MediaLibraryService.MediaLib
                             long startPosition = SkipUtils.skipIntroIfNecessary(context, media);
                             startPosition = RewindAfterPauseUtils.calculatePositionWithRewind(
                                     (int) startPosition, media.getLastPlayedTimeStatistics());
+                            List<MediaItem> mediaItems = createPlaybackItems(media);
                             MediaSession.MediaItemsWithStartPosition result =
                                     new MediaSession.MediaItemsWithStartPosition(
-                                            Collections.singletonList(
-                                                    MediaItemAdapter.fromPlayable(context, media, false)),
-                                            0, startPosition);
+                                            mediaItems, 0, mediaItems.size() > 1 ? 0 : startPosition);
                             future.set(result);
                         },
                         future::setException
@@ -371,7 +419,8 @@ public class MediaLibrarySessionCallback implements MediaLibraryService.MediaLib
     public ListenableFuture<LibraryResult<MediaItem>> onGetItem(
             @NonNull MediaLibraryService.MediaLibrarySession session,
             @NonNull MediaSession.ControllerInfo browser, @NonNull String mediaId) {
-        if (BROWSABLE_MEDIA_IDS.contains(mediaId) || mediaId.startsWith(MediaItemAdapter.MEDIA_ID_FEED_PREFIX)) {
+        if (BROWSABLE_MEDIA_IDS.contains(mediaId) || mediaId.startsWith(MediaItemAdapter.MEDIA_ID_FEED_PREFIX)
+                || mediaId.startsWith(MediaItemAdapter.MEDIA_ID_TOPICS_PREFIX)) {
             SettableFuture<LibraryResult<MediaItem>> future = SettableFuture.create();
             disposables.add(Single.fromCallable(() -> createBrowsableMediaItem(mediaId))
                     .subscribeOn(Schedulers.io())
@@ -391,15 +440,55 @@ public class MediaLibrarySessionCallback implements MediaLibraryService.MediaLib
         final int pageSize = Math.min(100, pageSizeRequest); // Safety limit when calling application wants too much
         SettableFuture<LibraryResult<ImmutableList<MediaItem>>> future = SettableFuture.create();
 
+        if (parentId.startsWith(MediaItemAdapter.MEDIA_ID_TOPICS_PREFIX)) {
+            disposables.add(Single.fromCallable(() -> {
+                long mediaId = getUnderlyingMediaId(parentId);
+                FeedMedia media = DBReader.getFeedMedia(mediaId);
+                EpisodeSummary summary = getUsableSummary(mediaId);
+                if (media == null || summary == null) {
+                    return Collections.<MediaItem>emptyList();
+                }
+                List<MediaItem> items = new ArrayList<>();
+                MediaItem playItem = MediaItemAdapter.fromPlayable(context, media, true);
+                items.add(playItem.buildUpon().setMediaMetadata(playItem.mediaMetadata.buildUpon()
+                        .setTitle(context.getString(R.string.play_summary_and_episode))
+                        .setSubtitle(media.getEpisodeTitle())
+                        .setSupportedCommands(ImmutableList.of(MediaItemAdapter.COMMAND_PLAY_BROWSE_ITEM))
+                        .build()).build());
+                for (EpisodeTopic topic : summary.getTopics()) {
+                    items.add(MediaItemAdapter.fromEpisodeTopic(context, media, topic));
+                }
+                items.add(MediaItemAdapter.fromNextEpisode(context, media));
+                return items;
+            }).subscribeOn(Schedulers.io())
+                    .subscribe(items -> future.set(LibraryResult.ofItemList(items, params)),
+                            future::setException));
+            return future;
+        }
+
         switch (parentId) {
             case MEDIA_ID_ROOT:
                 disposables.add(Single.fromCallable(() -> ImmutableList.of(
                                 createBrowsableMediaItem(MEDIA_ID_CONTINUE_LISTENING),
+                                createBrowsableMediaItem(MEDIA_ID_SUMMARIES),
                                 createBrowsableMediaItem(MEDIA_ID_QUEUE),
                                 createBrowsableMediaItem(MEDIA_ID_DOWNLOADS),
                                 createBrowsableMediaItem(MEDIA_ID_EPISODES),
                                 createBrowsableMediaItem(MEDIA_ID_SUBSCRIPTIONS)))
                         .subscribeOn(Schedulers.io())
+                        .subscribe(items -> future.set(LibraryResult.ofItemList(items, params)),
+                                future::setException));
+                return future;
+            case MEDIA_ID_SUMMARIES:
+                disposables.add(Single.fromCallable(() -> {
+                    List<MediaItem> items = new ArrayList<>();
+                    for (FeedItem item : DBReader.getQueue()) {
+                        if (item.getMedia() != null && getUsableSummary(item.getMedia().getId()) != null) {
+                            items.add(MediaItemAdapter.fromTopicPage(item.getMedia()));
+                        }
+                    }
+                    return items;
+                }).subscribeOn(Schedulers.io())
                         .subscribe(items -> future.set(LibraryResult.ofItemList(items, params)),
                                 future::setException));
                 return future;
@@ -484,14 +573,68 @@ public class MediaLibrarySessionCallback implements MediaLibraryService.MediaLib
         ImmutableList.Builder<MediaItem> builder = ImmutableList.builder();
         for (MediaItem item : mediaItems) {
             try {
-                long mediaId = Long.parseLong(item.mediaId);
+                long mediaId = getUnderlyingMediaId(item.mediaId);
                 FeedMedia media = DBReader.getFeedMedia(mediaId);
-                builder.add(MediaItemAdapter.fromPlayable(context, media, false));
-            } catch (NumberFormatException e) {
+                if (media == null) {
+                    continue;
+                }
+                if (item.mediaId.startsWith(MediaItemAdapter.MEDIA_ID_TOPIC_PREFIX)) {
+                    String[] parts = item.mediaId.split(":");
+                    builder.add(MediaItemAdapter.fromEpisodeTopic(context, media,
+                            new EpisodeTopic(item.mediaMetadata.title == null
+                                    ? media.getEpisodeTitle() : item.mediaMetadata.title.toString(),
+                                    Long.parseLong(parts[2]), Long.parseLong(parts[3]))));
+                } else {
+                    builder.addAll(createPlaybackItems(media));
+                }
+            } catch (NumberFormatException | ArrayIndexOutOfBoundsException e) {
                 Log.e(TAG, "Invalid media ID: " + item.mediaId, e);
             }
         }
         return builder.build();
+    }
+
+    @WorkerThread
+    private List<MediaItem> createPlaybackItems(FeedMedia media) {
+        List<MediaItem> items = new ArrayList<>();
+        EpisodeSummary summary = getUsableSummary(media.getId());
+        if (EpisodeSummaryPlayback.shouldInclude(
+                media, summary, UserPreferences.isEpisodeSummaryEnabled())) {
+            items.add(MediaItemAdapter.fromEpisodeSummary(context, media, summary));
+        }
+        items.add(MediaItemAdapter.fromPlayable(context, media, false));
+        return items;
+    }
+
+    @Nullable
+    private EpisodeSummary getUsableSummary(long mediaId) {
+        EpisodeSummary summary = DBReader.getEpisodeSummary(mediaId);
+        if (summary == null || summary.getAudioFileUrl() == null
+                || !new File(summary.getAudioFileUrl()).isFile()) {
+            return null;
+        }
+        return summary;
+    }
+
+    public static long getUnderlyingMediaId(String mediaId) {
+        if (mediaId.contains(":")) {
+            return Long.parseLong(mediaId.split(":")[1]);
+        }
+        return Long.parseLong(mediaId);
+    }
+
+    private static class ResolvedMediaItems {
+        final List<MediaItem> items;
+        final FeedMedia media;
+        final int startIndex;
+        final boolean topic;
+
+        ResolvedMediaItems(List<MediaItem> items, FeedMedia media, int startIndex, boolean topic) {
+            this.items = items;
+            this.media = media;
+            this.startIndex = startIndex;
+            this.topic = topic;
+        }
     }
 
     @WorkerThread
@@ -529,7 +672,17 @@ public class MediaLibrarySessionCallback implements MediaLibraryService.MediaLib
             case MEDIA_ID_CONTINUE_LISTENING:
                 return MediaItemAdapter.from(context, MEDIA_ID_CONTINUE_LISTENING,
                         context.getString(R.string.current_playing_episode), R.drawable.ic_play_48dp_black, null);
+            case MEDIA_ID_SUMMARIES:
+                return MediaItemAdapter.from(context, MEDIA_ID_SUMMARIES,
+                        context.getString(R.string.episode_summaries_auto_title), R.drawable.ic_playlist_play_black,
+                        null);
             default:
+                if (id.startsWith(MediaItemAdapter.MEDIA_ID_TOPICS_PREFIX)) {
+                    FeedMedia media = DBReader.getFeedMedia(getUnderlyingMediaId(id));
+                    if (media != null) {
+                        return MediaItemAdapter.fromTopicPage(media);
+                    }
+                }
                 throw new IllegalArgumentException("ID not known: " + id);
         }
     }
