@@ -155,6 +155,23 @@ public class MediaLibrarySessionCallbackTest {
     }
 
     @Test
+    public void segmentEntryPointStartsAtTopicOffset() throws Exception {
+        FeedMedia media = seedEpisode();
+        MediaItem stub = new MediaItem.Builder()
+                .setMediaId(MediaLibrarySessionCallback.MEDIA_ID_SEGMENT_PREFIX
+                        + media.getItem().getId() + ":30000:90000")
+                .setMediaMetadata(new MediaMetadata.Builder().setTitle("t").build())
+                .build();
+        MediaSession.MediaItemsWithStartPosition result = callback.onSetMediaItems(
+                session, controllerInfo, Collections.singletonList(stub), C.INDEX_UNSET, C.TIME_UNSET)
+                .get(5, TimeUnit.SECONDS);
+        assertEquals(1, result.mediaItems.size());
+        assertEquals(30_000L, result.startPositionMs);
+        android.os.Bundle extras = result.mediaItems.get(0).requestMetadata.extras;
+        assertEquals(90_000L, extras.getLong(MediaLibrarySessionCallback.EXTRA_SUMMARY_END));
+    }
+
+    @Test
     public void segmentResolutionCarriesStartAndEndExtras() throws Exception {
         FeedMedia media = seedEpisode();
         MediaItem stub = new MediaItem.Builder()
@@ -169,6 +186,35 @@ public class MediaLibrarySessionCallbackTest {
         assertEquals(30_000L, extras.getLong(MediaLibrarySessionCallback.EXTRA_SUMMARY_START));
         assertEquals(90_000L, extras.getLong(MediaLibrarySessionCallback.EXTRA_SUMMARY_END));
     }
+
+    @Test
+    public void malformedSegmentIdResolvesToNothing() throws Exception {
+        seedEpisode();
+        MediaItem stub = new MediaItem.Builder()
+                .setMediaId(MediaLibrarySessionCallback.MEDIA_ID_SEGMENT_PREFIX + "oops")
+                .setMediaMetadata(new MediaMetadata.Builder().setTitle("t").build())
+                .build();
+        java.util.List<MediaItem> resolved = callback.onAddMediaItems(
+                session, controllerInfo, Collections.singletonList(stub)).get(5, TimeUnit.SECONDS);
+        assertTrue(resolved.isEmpty());
+    }
+
+    @Test
+    public void negativeSegmentStartClampsToZero() throws Exception {
+        FeedMedia media = seedEpisode();
+        MediaItem stub = new MediaItem.Builder()
+                .setMediaId(MediaLibrarySessionCallback.MEDIA_ID_SEGMENT_PREFIX
+                        + media.getItem().getId() + ":-5000:90000")
+                .setMediaMetadata(new MediaMetadata.Builder().setTitle("t").build())
+                .build();
+        java.util.List<MediaItem> resolved = callback.onAddMediaItems(
+                session, controllerInfo, Collections.singletonList(stub)).get(5, TimeUnit.SECONDS);
+        assertEquals(1, resolved.size());
+        android.os.Bundle extras = resolved.get(0).requestMetadata.extras;
+        assertEquals(0L, extras.getLong(MediaLibrarySessionCallback.EXTRA_SUMMARY_START));
+        assertEquals(90_000L, extras.getLong(MediaLibrarySessionCallback.EXTRA_SUMMARY_END));
+    }
+
     private FeedMedia seedEpisode() {
         Feed feed = new Feed("url", null, null);
         feed.setItems(new ArrayList<>());

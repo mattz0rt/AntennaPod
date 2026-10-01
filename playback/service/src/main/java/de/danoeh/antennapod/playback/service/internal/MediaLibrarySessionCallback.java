@@ -602,6 +602,10 @@ public class MediaLibrarySessionCallback implements MediaLibraryService.MediaLib
                     }
                 } else if (item.mediaId.startsWith(MEDIA_ID_SEGMENT_PREFIX)) {
                     String[] parts = item.mediaId.split(":");
+                    if (parts.length < 3) {
+                        Log.e(TAG, "Invalid segment media ID: " + item.mediaId);
+                        continue;
+                    }
                     long itemId = Long.parseLong(parts[1]);
                     long startMs = Long.parseLong(parts[2]);
                     long endMs = parts.length > 3 ? Long.parseLong(parts[3]) : -1;
@@ -609,7 +613,7 @@ public class MediaLibrarySessionCallback implements MediaLibraryService.MediaLib
                     if (episode != null && episode.getMedia() != null) {
                         builder.add(withStartAndEnd(
                                 MediaItemAdapter.fromPlayable(context, episode.getMedia(), false),
-                                startMs, endMs));
+                                Math.max(0, startMs), endMs));
                     }
                 } else {
                     long mediaId = Long.parseLong(item.mediaId);
