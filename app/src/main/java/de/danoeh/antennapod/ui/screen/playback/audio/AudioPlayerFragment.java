@@ -1,13 +1,19 @@
 package de.danoeh.antennapod.ui.screen.playback.audio;
 
+import android.media.MediaPlayer;
+import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.Button;
 import android.widget.ImageButton;
+import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.SeekBar;
 import android.widget.TextView;
@@ -18,6 +24,7 @@ import androidx.cardview.widget.CardView;
 import androidx.fragment.app.Fragment;
 import androidx.interpolator.view.animation.FastOutSlowInInterpolator;
 import androidx.media3.session.MediaController;
+import de.danoeh.antennapod.model.feed.EpisodeSummary;
 import androidx.viewpager2.adapter.FragmentStateAdapter;
 import androidx.viewpager2.widget.ViewPager2;
 
@@ -95,6 +102,19 @@ public class AudioPlayerFragment extends Fragment implements
     private PlayButton butPlay;
     private ImageButton butFF;
     private TextView txtvFF;
+    private View summaryOverlay;
+    private TextView summaryPodcast;
+    private TextView summaryEpisode;
+    private TextView summaryText;
+    private LinearLayout summaryTopics;
+    private Button summaryNext;
+    private ImageButton summaryClose;
+    private final Handler summaryHandler = new Handler(Looper.getMainLooper());
+    private MediaPlayer summaryPlayer;
+    private EpisodeSummary currentSummary;
+    private long summaryCheckedItemId = -1;
+    private boolean summaryMissingRetried;
+    private long segmentEndMs = -1;
     private ImageButton butSkip;
     private MaterialToolbar toolbar;
     private ProgressBar progressIndicator;
@@ -139,6 +159,7 @@ public class AudioPlayerFragment extends Fragment implements
         progressIndicator = root.findViewById(R.id.progLoading);
         cardViewSeek = root.findViewById(R.id.cardViewSeek);
         txtvSeek = root.findViewById(R.id.txtvSeek);
+        setupSummaryOverlay(root);
 
         setupLengthTextView();
         setupControlButtons();
@@ -163,6 +184,232 @@ public class AudioPlayerFragment extends Fragment implements
         });
 
         return root;
+    }
+
+    private void setupSummaryOverlay(@NonNull View root) {
+        summaryOverlay = root.findViewById(R.id.summary_overlay);
+        summaryPodcast = root.findViewById(R.id.summary_podcast);
+        summaryEpisode = root.findViewById(R.id.summary_episode);
+        summaryText = root.findViewById(R.id.summary_text);
+        summaryTopics = root.findViewById(R.id.summary_topics);
+        summaryNext = root.findViewById(R.id.summary_next);
+        summaryClose = root.findViewById(R.id.summary_close);
+        summaryClose.setOnClickListener(v -> closeSummaryAndResume());
+        summaryNext.setOnClickListener(v -> skipToNextEpisode());
+    }
+
+    private void maybeShowSummary() {
+        if (currentMedia == null || !UserPreferences.showSummaryOnPlay()
+                || summaryCheckedItemId == currentMedia.getItemId()) {
+            return;
+        }
+        summaryCheckedItemId = currentMedia.getItemId();
+        long itemId = currentMedia.getItemId();
+        Maybe.fromCallable(() -> DBReader.getEpisodeSummary(itemId))
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(summary -> {
+                    if (currentMedia == null || currentMedia.getItemId() != itemId) {
+                        return;
+                    }
+                    if (summary.getStatus() == EpisodeSummary.STATUS_DONE
+                            && summary.getAudioPath() != null
+                            && new java.io.File(summary.getAudioPath()).isFile()) {
+                        currentSummary = summary;
+                        showSummaryPage(true);
+                    } else if (summary.getStatus() == EpisodeSummary.STATUS_PENDING) {
+                        scheduleSummaryRetry(itemId);
+                    }
+                }, error -> Log.w(TAG, "Unable to load episode summary", error), () -> {
+                    if (!summaryMissingRetried) {
+                        summaryMissingRetried = true;
+                        scheduleSummaryRetry(itemId);
+                    }
+                });
+    }
+
+    private void scheduleSummaryRetry(long itemId) {
+        summaryHandler.postDelayed(() -> {
+            if (currentMedia != null && currentMedia.getItemId() == itemId) {
+                summaryCheckedItemId = -1;
+                maybeShowSummary();
+            }
+        }, 2000);
+    }
+
+    private void showSummaryPage(boolean playNarration) {
+        if (currentSummary == null || currentMedia == null || summaryOverlay == null) {
+            return;
+        }
+        pauseMainPlayback();
+        summaryPodcast.setText(currentMedia.getItem() != null && currentMedia.getItem().getFeed() != null
+                ? currentMedia.getItem().getFeed().getTitle() : "");
+        summaryEpisode.setText(currentMedia.getEpisodeTitle());
+        summaryText.setText(currentSummary.getText());
+        summaryTopics.removeAllViews();
+        for (int i = 0; i < currentSummary.getTopics().size(); i++) {
+            EpisodeSummary.Topic topic = currentSummary.getTopics().get(i);
+            Button topicButton = new Button(requireContext());
+            topicButton.setAllCaps(false);
+            topicButton.setMinHeight(64);
+            topicButton.setGravity(android.view.Gravity.START | android.view.Gravity.CENTER_VERTICAL);
+            topicButton.setText(Converter.getDurationStringLong((int) topic.getStartMs())
+                    + "  " + topic.getTitle());
+            topicButton.setContentDescription(getString(R.string.summary_play_topic, topic.getTitle()));
+            final int topicIndex = i;
+            topicButton.setOnClickListener(v -> startTopic(topicIndex));
+            summaryTopics.addView(topicButton, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        }
+        summaryOverlay.setVisibility(View.VISIBLE);
+        if (playNarration) {
+            playSummaryNarration();
+        }
+    }
+
+    private void playSummaryNarration() {
+        releaseSummaryPlayer();
+        try {
+            summaryPlayer = MediaPlayer.create(requireContext(),
+                    Uri.fromFile(new java.io.File(currentSummary.getAudioPath())));
+            if (summaryPlayer == null) {
+                return;
+            }
+            summaryPlayer.setOnCompletionListener(player -> {
+                // Keep the summary page open so the listener can choose a topic or continue.
+            });
+            summaryPlayer.start();
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Unable to play episode summary", e);
+        }
+    }
+
+    private void releaseSummaryPlayer() {
+        if (summaryPlayer != null) {
+            try {
+                summaryPlayer.stop();
+            } catch (IllegalStateException ignored) {
+            }
+            summaryPlayer.release();
+            summaryPlayer = null;
+        }
+    }
+
+    private void pauseMainPlayback() {
+        if (!PlaybackService.isRunning) {
+            return;
+        }
+        if (BuildConfig.USE_MEDIA3_PLAYBACK_SERVICE) {
+            PlaybackController.bindToMedia3Service(getContext(), MediaController::pause);
+        } else if (getActivity() != null) {
+            getActivity().sendBroadcast(MediaButtonStarter.createIntent(
+                    getContext(), KeyEvent.KEYCODE_MEDIA_PAUSE));
+        }
+    }
+
+    private void closeSummaryAndResume() {
+        summaryHandler.removeCallbacksAndMessages(null);
+        segmentEndMs = -1;
+        releaseSummaryPlayer();
+        if (summaryOverlay != null) {
+            summaryOverlay.setVisibility(View.GONE);
+        }
+        if (currentMedia == null) {
+            return;
+        }
+        if (BuildConfig.USE_MEDIA3_PLAYBACK_SERVICE) {
+            PlaybackController.bindToMedia3Service(getContext(), MediaController::play);
+        } else if (PlaybackService.isRunning && getActivity() != null) {
+            getActivity().sendBroadcast(MediaButtonStarter.createIntent(
+                    getContext(), KeyEvent.KEYCODE_MEDIA_PLAY));
+        } else {
+            new PlaybackServiceStarter(getContext(), currentMedia)
+                    .callEvenIfRunning(true).start();
+        }
+    }
+
+    private void skipToNextEpisode() {
+        summaryHandler.removeCallbacksAndMessages(null);
+        segmentEndMs = -1;
+        releaseSummaryPlayer();
+        if (summaryOverlay != null) {
+            summaryOverlay.setVisibility(View.GONE);
+        }
+        summaryCheckedItemId = -1;
+        if (BuildConfig.USE_MEDIA3_PLAYBACK_SERVICE) {
+            PlaybackController.bindToMedia3Service(getContext(), MediaController::seekToNextMediaItem);
+        } else if (getActivity() != null) {
+            getActivity().sendBroadcast(MediaButtonStarter.createIntent(
+                    getContext(), KeyEvent.KEYCODE_MEDIA_NEXT));
+        }
+    }
+
+    private void startTopic(int topicIndex) {
+        if (currentSummary == null || topicIndex < 0
+                || topicIndex >= currentSummary.getTopics().size()) {
+            return;
+        }
+        long startMs = Math.max(0, currentSummary.getTopics().get(topicIndex).getStartMs());
+        long endMs = currentSummary.getSegmentEndMs(topicIndex);
+        if (endMs < 0 && currentMedia != null && currentMedia.getDuration() > startMs) {
+            endMs = currentMedia.getDuration();
+        }
+        segmentEndMs = endMs;
+        releaseSummaryPlayer();
+        summaryOverlay.setVisibility(View.GONE);
+        if (BuildConfig.USE_MEDIA3_PLAYBACK_SERVICE) {
+            final long position = startMs;
+            PlaybackController.bindToMedia3Service(getContext(), controller -> {
+                controller.seekTo(position);
+                controller.play();
+                startSegmentWatchdog();
+            });
+        } else {
+            PlaybackController.bindToService(getActivity(), playbackService -> {
+                playbackService.seekTo((int) startMs);
+                getActivity().sendBroadcast(MediaButtonStarter.createIntent(
+                        getContext(), KeyEvent.KEYCODE_MEDIA_PLAY));
+                startSegmentWatchdog();
+            });
+        }
+    }
+
+    private void startSegmentWatchdog() {
+        summaryHandler.removeCallbacksAndMessages(null);
+        summaryHandler.post(segmentWatchdog);
+    }
+
+    private final Runnable segmentWatchdog = this::pollSegmentPosition;
+
+    private void pollSegmentPosition() {
+        if (segmentEndMs < 0 || currentMedia == null) {
+            return;
+        }
+        if (BuildConfig.USE_MEDIA3_PLAYBACK_SERVICE) {
+            PlaybackController.bindToMedia3Service(getContext(), controller -> {
+                if (controller.getCurrentPosition() >= segmentEndMs) {
+                    finishSegment(controller::pause);
+                } else {
+                    summaryHandler.postDelayed(segmentWatchdog, 250);
+                }
+            });
+        } else {
+            PlaybackController.bindToService(getActivity(), playbackService -> {
+                if (playbackService.getCurrentPosition() >= segmentEndMs) {
+                    finishSegment(() -> getActivity().sendBroadcast(MediaButtonStarter.createIntent(
+                            getContext(), KeyEvent.KEYCODE_MEDIA_PAUSE)));
+                } else {
+                    summaryHandler.postDelayed(segmentWatchdog, 250);
+                }
+            });
+        }
+    }
+
+    private void finishSegment(@NonNull Runnable pauseAction) {
+        segmentEndMs = -1;
+        summaryHandler.removeCallbacksAndMessages(null);
+        pauseAction.run();
+        showSummaryPage(false);
     }
 
     private void setChapterDividers() {
@@ -299,6 +546,16 @@ public class AudioPlayerFragment extends Fragment implements
         .subscribeOn(Schedulers.computation())
         .observeOn(AndroidSchedulers.mainThread())
         .subscribe(media -> {
+            if (currentMedia != null && currentMedia.getItemId() != media.getItemId()) {
+                summaryHandler.removeCallbacksAndMessages(null);
+                segmentEndMs = -1;
+                releaseSummaryPlayer();
+                if (summaryOverlay != null) {
+                    summaryOverlay.setVisibility(View.GONE);
+                }
+                currentSummary = null;
+                summaryMissingRetried = false;
+            }
             currentMedia = media;
             updateUi();
             if (media.getChapters() == null && !includingChapters) {
@@ -318,6 +575,7 @@ public class AudioPlayerFragment extends Fragment implements
         boolean isPlaying = PlaybackService.isRunning
                 && PlaybackPreferences.getCurrentPlayerStatus() == PlaybackPreferences.PLAYER_STATUS_PLAYING;
         butPlay.setIsShowPlay(!isPlaying);
+        maybeShowSummary();
     }
 
     @Subscribe(threadMode = ThreadMode.MAIN)
@@ -350,6 +608,12 @@ public class AudioPlayerFragment extends Fragment implements
         super.onStop();
         progressIndicator.setVisibility(View.GONE);
         EventBus.getDefault().unregister(this);
+        summaryHandler.removeCallbacksAndMessages(null);
+        segmentEndMs = -1;
+        releaseSummaryPlayer();
+        if (summaryOverlay != null) {
+            summaryOverlay.setVisibility(View.GONE);
+        }
         if (disposable != null) {
             disposable.dispose();
         }

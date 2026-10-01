@@ -32,6 +32,7 @@ import java.util.Map;
 import java.util.Set;
 
 import de.danoeh.antennapod.model.feed.Chapter;
+import de.danoeh.antennapod.model.feed.EpisodeSummary;
 import de.danoeh.antennapod.model.feed.Feed;
 import de.danoeh.antennapod.model.feed.FeedItem;
 import de.danoeh.antennapod.model.feed.FeedItemFilter;
@@ -55,7 +56,7 @@ public class PodDBAdapter {
 
     private static final String TAG = "PodDBAdapter";
     public static final String DATABASE_NAME = "Antennapod.db";
-    public static final int VERSION = 3110000;
+    public static final int VERSION = 3110100;
 
     /**
      * Maximum number of arguments for IN-operator.
@@ -129,6 +130,12 @@ public class PodDBAdapter {
     public static final String KEY_PODCASTINDEX_TRANSCRIPT_URL = "podcastindex_transcript_url";
     public static final String KEY_PODCASTINDEX_TRANSCRIPT_TYPE = "podcastindex_transcript_type";
 
+    public static final String KEY_SUMMARY_TEXT = "summary_text";
+    public static final String KEY_SUMMARY_AUDIO_PATH = "summary_audio_path";
+    public static final String KEY_SUMMARY_STATUS = "summary_status";
+    public static final String KEY_SUMMARY_CREATED_AT = "summary_created_at";
+    public static final String KEY_SUMMARY_ID = "summary_id";
+
     // Table names
     public static final String TABLE_NAME_FEEDS = "Feeds";
     public static final String TABLE_NAME_FEED_ITEMS = "FeedItems";
@@ -138,6 +145,8 @@ public class PodDBAdapter {
     public static final String TABLE_NAME_QUEUE = "Queue";
     public static final String TABLE_NAME_SIMPLECHAPTERS = "SimpleChapters";
     public static final String TABLE_NAME_FAVORITES = "Favorites";
+    public static final String TABLE_NAME_EPISODE_SUMMARIES = "EpisodeSummaries";
+    public static final String TABLE_NAME_SUMMARY_TOPICS = "SummaryTopics";
 
     // SQL Statements for creating new tables
     private static final String TABLE_PRIMARY_KEY = KEY_ID
@@ -222,6 +231,17 @@ public class PodDBAdapter {
             + " TEXT," + KEY_START + " INTEGER," + KEY_FEEDITEM + " INTEGER,"
             + KEY_LINK + " TEXT," + KEY_IMAGE_URL + " TEXT)";
 
+    static final String CREATE_TABLE_EPISODE_SUMMARIES = "CREATE TABLE "
+            + TABLE_NAME_EPISODE_SUMMARIES + " (" + TABLE_PRIMARY_KEY
+            + KEY_FEEDITEM + " INTEGER UNIQUE," + KEY_SUMMARY_TEXT + " TEXT,"
+            + KEY_SUMMARY_AUDIO_PATH + " TEXT," + KEY_DURATION + " INTEGER,"
+            + KEY_SUMMARY_STATUS + " INTEGER," + KEY_SUMMARY_CREATED_AT + " INTEGER)";
+
+    static final String CREATE_TABLE_SUMMARY_TOPICS = "CREATE TABLE "
+            + TABLE_NAME_SUMMARY_TOPICS + " (" + TABLE_PRIMARY_KEY
+            + KEY_TITLE + " TEXT," + KEY_START + " INTEGER,"
+            + KEY_SUMMARY_ID + " INTEGER)";
+
     // SQL Statements for creating indexes
     static final String CREATE_INDEX_FEEDITEMS_FEED = "CREATE INDEX "
             + TABLE_NAME_FEED_ITEMS + "_" + KEY_FEED + " ON " + TABLE_NAME_FEED_ITEMS + " ("
@@ -247,6 +267,14 @@ public class PodDBAdapter {
             + TABLE_NAME_SIMPLECHAPTERS + "_" + KEY_FEEDITEM + " ON " + TABLE_NAME_SIMPLECHAPTERS + " ("
             + KEY_FEEDITEM + ")";
 
+    static final String CREATE_INDEX_EPISODE_SUMMARIES_FEEDITEM = "CREATE INDEX "
+            + TABLE_NAME_EPISODE_SUMMARIES + "_" + KEY_FEEDITEM + " ON "
+            + TABLE_NAME_EPISODE_SUMMARIES + " (" + KEY_FEEDITEM + ")";
+
+    static final String CREATE_INDEX_SUMMARY_TOPICS_SUMMARY = "CREATE INDEX "
+            + TABLE_NAME_SUMMARY_TOPICS + "_" + KEY_SUMMARY_ID + " ON "
+            + TABLE_NAME_SUMMARY_TOPICS + " (" + KEY_SUMMARY_ID + ")";
+
     static final String CREATE_TABLE_FAVORITES = "CREATE TABLE "
             + TABLE_NAME_FAVORITES + "(" + KEY_ID + " INTEGER PRIMARY KEY,"
             + KEY_FEEDITEM + " INTEGER," + KEY_FEED + " INTEGER)";
@@ -261,7 +289,9 @@ public class PodDBAdapter {
             TABLE_NAME_DOWNLOAD_LOG,
             TABLE_NAME_QUEUE,
             TABLE_NAME_SIMPLECHAPTERS,
-            TABLE_NAME_FAVORITES
+            TABLE_NAME_FAVORITES,
+            TABLE_NAME_EPISODE_SUMMARIES,
+            TABLE_NAME_SUMMARY_TOPICS
     };
 
     public static final String SELECT_KEY_ITEM_ID = "item_id";
@@ -269,7 +299,6 @@ public class PodDBAdapter {
     public static final String SELECT_KEY_FEED_ID = "feed_id";
     public static final String SELECT_KEY_IS_FAVORITE = "is_favorite";
     public static final String SELECT_KEY_IS_IN_QUEUE = "is_in_queue";
-
     private static final String KEYS_FEED_ITEM_WITHOUT_DESCRIPTION =
             TABLE_NAME_FEED_ITEMS + "." + KEY_ID + " AS " + SELECT_KEY_ITEM_ID + ", "
             + TABLE_NAME_FEED_ITEMS + "." + KEY_TITLE + ", "
@@ -1502,6 +1531,86 @@ public class PodDBAdapter {
         return db.rawQuery(sb.toString(), null);
     }
 
+    public void setEpisodeSummary(@NonNull EpisodeSummary summary) {
+        db.beginTransactionNonExclusive();
+        try {
+            deleteEpisodeSummary(summary.getItemId());
+
+            ContentValues values = new ContentValues();
+            values.put(KEY_FEEDITEM, summary.getItemId());
+            values.put(KEY_SUMMARY_TEXT, summary.getText());
+            values.put(KEY_SUMMARY_AUDIO_PATH, summary.getAudioPath());
+            values.put(KEY_DURATION, summary.getDurationMs());
+            values.put(KEY_SUMMARY_STATUS, summary.getStatus());
+            values.put(KEY_SUMMARY_CREATED_AT, summary.getCreatedAt());
+            long summaryId = db.insertOrThrow(TABLE_NAME_EPISODE_SUMMARIES, null, values);
+            summary.setId(summaryId);
+
+            for (EpisodeSummary.Topic topic : summary.getTopics()) {
+                values.clear();
+                values.put(KEY_TITLE, topic.getTitle());
+                values.put(KEY_START, topic.getStartMs());
+                values.put(KEY_SUMMARY_ID, summaryId);
+                db.insertOrThrow(TABLE_NAME_SUMMARY_TOPICS, null, values);
+            }
+            db.setTransactionSuccessful();
+        } finally {
+            db.endTransaction();
+        }
+    }
+
+    @Nullable
+    public EpisodeSummary getEpisodeSummary(long itemId) {
+        try (Cursor cursor = db.query(TABLE_NAME_EPISODE_SUMMARIES, null,
+                KEY_FEEDITEM + "=?", new String[]{String.valueOf(itemId)},
+                null, null, null)) {
+            if (!cursor.moveToFirst()) {
+                return null;
+            }
+            EpisodeSummary summary = new EpisodeSummary(itemId);
+            summary.setId(cursor.getLong(cursor.getColumnIndexOrThrow(KEY_ID)));
+            summary.setText(cursor.getString(cursor.getColumnIndexOrThrow(KEY_SUMMARY_TEXT)));
+            summary.setAudioPath(cursor.getString(cursor.getColumnIndexOrThrow(KEY_SUMMARY_AUDIO_PATH)));
+            summary.setDurationMs(cursor.getLong(cursor.getColumnIndexOrThrow(KEY_DURATION)));
+            summary.setStatus(cursor.getInt(cursor.getColumnIndexOrThrow(KEY_SUMMARY_STATUS)));
+            summary.setCreatedAt(cursor.getLong(cursor.getColumnIndexOrThrow(KEY_SUMMARY_CREATED_AT)));
+
+            try (Cursor topicCursor = db.query(TABLE_NAME_SUMMARY_TOPICS, null,
+                    KEY_SUMMARY_ID + "=?", new String[]{String.valueOf(summary.getId())},
+                    null, null, KEY_START + " ASC")) {
+                while (topicCursor.moveToNext()) {
+                    summary.getTopics().add(new EpisodeSummary.Topic(
+                            topicCursor.getString(topicCursor.getColumnIndexOrThrow(KEY_TITLE)),
+                            topicCursor.getLong(topicCursor.getColumnIndexOrThrow(KEY_START))));
+                }
+            }
+            return summary;
+        }
+    }
+
+    public void deleteEpisodeSummary(long itemId) {
+        String[] summaryIds = new String[1];
+        try (Cursor cursor = db.query(TABLE_NAME_EPISODE_SUMMARIES,
+                new String[]{KEY_ID}, KEY_FEEDITEM + "=?",
+                new String[]{String.valueOf(itemId)}, null, null, null)) {
+            if (!cursor.moveToFirst()) {
+                return;
+            }
+            summaryIds[0] = String.valueOf(cursor.getLong(0));
+        }
+        db.delete(TABLE_NAME_SUMMARY_TOPICS, KEY_SUMMARY_ID + "=?", summaryIds);
+        db.delete(TABLE_NAME_EPISODE_SUMMARIES, KEY_FEEDITEM + "=?",
+                new String[]{String.valueOf(itemId)});
+    }
+
+    public void deleteEpisodeSummaries(@NonNull List<Long> itemIds) {
+        for (Long itemId : itemIds) {
+            if (itemId != null) {
+                deleteEpisodeSummary(itemId);
+            }
+        }
+    }
+
     private String getItemIds(List<FeedItem> items) {
         StringBuilder itemIds = new StringBuilder();
         for (FeedItem item : items) {
@@ -1568,6 +1677,8 @@ public class PodDBAdapter {
             db.execSQL(CREATE_TABLE_QUEUE);
             db.execSQL(CREATE_TABLE_SIMPLECHAPTERS);
             db.execSQL(CREATE_TABLE_FAVORITES);
+            db.execSQL(CREATE_TABLE_EPISODE_SUMMARIES);
+            db.execSQL(CREATE_TABLE_SUMMARY_TOPICS);
 
             db.execSQL(CREATE_INDEX_FEEDITEMS_FEED);
             db.execSQL(CREATE_INDEX_FEEDITEMS_PUBDATE);
@@ -1575,6 +1686,8 @@ public class PodDBAdapter {
             db.execSQL(CREATE_INDEX_FEEDMEDIA_FEEDITEM);
             db.execSQL(CREATE_INDEX_QUEUE_FEEDITEM);
             db.execSQL(CREATE_INDEX_SIMPLECHAPTERS_FEEDITEM);
+            db.execSQL(CREATE_INDEX_EPISODE_SUMMARIES_FEEDITEM);
+            db.execSQL(CREATE_INDEX_SUMMARY_TOPICS_SUMMARY);
         }
 
         @Override

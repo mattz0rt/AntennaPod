@@ -9,6 +9,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.OptIn;
 import androidx.core.util.Pair;
+import androidx.media3.common.C;
 import androidx.media3.common.DeviceInfo;
 import androidx.media3.common.ForwardingPlayer;
 import androidx.media3.common.MediaItem;
@@ -437,8 +438,29 @@ public class Media3PlaybackService extends MediaLibraryService {
                                 if (SkipUtils.skipEndingIfNecessary(this, currentPlayable, position, duration, speed)) {
                                     player.seekTo(player.getDuration());
                                 }
+                                stopAtSummarySegmentBoundary(position);
                             }
                         }, error -> Log.e(TAG, "Position observer error", error));
+    }
+
+    /**
+     * Topic segments requested through the Android Auto browse tree carry a
+     * summary_end_ms extra. When playback reaches that boundary, stop instead of
+     * continuing with the rest of the episode.
+     */
+    private void stopAtSummarySegmentBoundary(long position) {
+        MediaItem current = player.getCurrentMediaItem();
+        Bundle extras = current != null ? current.requestMetadata.extras : null;
+        long endMs = extras != null
+                ? extras.getLong(MediaLibrarySessionCallback.EXTRA_SUMMARY_END, C.TIME_UNSET)
+                : C.TIME_UNSET;
+        if (endMs <= 0 || endMs == C.TIME_UNSET) {
+            return;
+        }
+        if (position >= endMs && player.isPlaying()) {
+            player.pause();
+            EventBus.getDefault().post(new PlayerStatusEvent());
+        }
     }
 
     private void cancelPositionObserver() {

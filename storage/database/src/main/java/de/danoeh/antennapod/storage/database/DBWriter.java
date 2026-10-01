@@ -15,6 +15,7 @@ import com.google.common.util.concurrent.Futures;
 import de.danoeh.antennapod.event.DownloadLogEvent;
 
 import de.danoeh.antennapod.model.feed.FeedItemFilter;
+import de.danoeh.antennapod.model.feed.EpisodeSummary;
 import de.danoeh.antennapod.net.download.serviceinterface.AutoDownloadManager;
 import de.danoeh.antennapod.net.download.serviceinterface.DownloadServiceInterface;
 import de.danoeh.antennapod.net.download.serviceinterface.FeedUpdateManager;
@@ -93,6 +94,18 @@ public class DBWriter {
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    public static Future<?> setEpisodeSummary(@NonNull final EpisodeSummary summary) {
+        return runOnDbThread(() -> {
+            PodDBAdapter adapter = PodDBAdapter.getInstance();
+            adapter.open();
+            try {
+                adapter.setEpisodeSummary(summary);
+            } finally {
+                adapter.close();
+            }
+        });
     }
 
     /**
@@ -237,6 +250,18 @@ public class DBWriter {
 
         PodDBAdapter adapter = PodDBAdapter.getInstance();
         adapter.open();
+        for (FeedItem item : items) {
+            EpisodeSummary summary = adapter.getEpisodeSummary(item.getId());
+            if (summary != null) {
+                if (summary.getAudioPath() != null) {
+                    File summaryFile = new File(summary.getAudioPath());
+                    if (summaryFile.exists() && !summaryFile.delete()) {
+                        Log.w(TAG, "Unable to delete episode summary audio: " + summaryFile);
+                    }
+                }
+                adapter.deleteEpisodeSummary(item.getId());
+            }
+        }
         if (!removedFromQueue.isEmpty()) {
             adapter.setQueue(queue);
         }

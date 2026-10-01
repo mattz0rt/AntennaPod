@@ -2,8 +2,12 @@ package de.danoeh.antennapod.playback.service.internal;
 
 import android.content.Context;
 import androidx.media3.common.C;
+import androidx.media3.common.MediaMetadata;
 import androidx.media3.common.MediaItem;
+import androidx.media3.session.LibraryResult;
+import com.google.common.collect.ImmutableList;
 import androidx.media3.session.MediaSession;
+import de.danoeh.antennapod.model.feed.EpisodeSummary;
 import de.danoeh.antennapod.model.feed.Feed;
 import de.danoeh.antennapod.model.feed.FeedItem;
 import de.danoeh.antennapod.model.feed.FeedMedia;
@@ -26,6 +30,7 @@ import java.util.Collections;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.mock;
 
 @RunWith(RobolectricTestRunner.class)
@@ -104,6 +109,66 @@ public class MediaLibrarySessionCallbackTest {
         assertEquals(String.valueOf(mediaId), result.mediaItems.get(0).mediaId);
     }
 
+
+    @Test
+    public void summariesNodeListsEpisodesWithSummaries() throws Exception {
+        FeedMedia media = seedEpisode();
+        EpisodeSummary summary = new EpisodeSummary(media.getItem().getId());
+        summary.setText("Narrated recap.");
+        media.setLocalFileUrl("/tmp/episode.mp3");
+        media.setDownloaded(true, 60_000);
+        media.setDuration(120_000);
+        PodDBAdapter seedAdapter = PodDBAdapter.getInstance();
+        seedAdapter.open();
+        seedAdapter.setMedia(media);
+        seedAdapter.close();
+
+        summary.setAudioPath("/tmp/summary.wav");
+        summary.setStatus(EpisodeSummary.STATUS_DONE);
+        summary.setTopics(java.util.Arrays.asList(
+                new EpisodeSummary.Topic("Intro", 0),
+                new EpisodeSummary.Topic("Deep dive", 60_000)));
+        PodDBAdapter adapter = PodDBAdapter.getInstance();
+        adapter.open();
+        adapter.setEpisodeSummary(summary);
+        adapter.close();
+
+        LibraryResult<ImmutableList<MediaItem>> folderResult = callback.onGetChildren(
+                null, controllerInfo, MediaLibrarySessionCallback.MEDIA_ID_SUMMARIES,
+                0, 100, null).get(5, TimeUnit.SECONDS);
+        ImmutableList<MediaItem> folders = folderResult.value;
+        assertEquals(1, folders.size());
+        assertEquals(MediaLibrarySessionCallback.MEDIA_ID_SUMMARY_PREFIX + media.getItem().getId(),
+                folders.get(0).mediaId);
+
+        LibraryResult<ImmutableList<MediaItem>> childResult = callback.onGetChildren(null, controllerInfo,
+                MediaLibrarySessionCallback.MEDIA_ID_SUMMARY_PREFIX + media.getItem().getId(),
+                0, 100, null).get(5, TimeUnit.SECONDS);
+        java.util.List<MediaItem> children = childResult.value;
+        assertEquals(3, children.size());
+        assertEquals(MediaLibrarySessionCallback.MEDIA_ID_SUMMARY_AUDIO_PREFIX + media.getItem().getId(),
+                children.get(0).mediaId);
+        assertEquals(MediaLibrarySessionCallback.MEDIA_ID_SEGMENT_PREFIX + media.getItem().getId() + ":0:60000",
+                children.get(1).mediaId);
+        assertEquals(MediaLibrarySessionCallback.MEDIA_ID_SEGMENT_PREFIX + media.getItem().getId() + ":60000:120000",
+                children.get(2).mediaId);
+    }
+
+    @Test
+    public void segmentResolutionCarriesStartAndEndExtras() throws Exception {
+        FeedMedia media = seedEpisode();
+        MediaItem stub = new MediaItem.Builder()
+                .setMediaId(MediaLibrarySessionCallback.MEDIA_ID_SEGMENT_PREFIX
+                        + media.getItem().getId() + ":30000:90000")
+                .setMediaMetadata(new MediaMetadata.Builder().setTitle("t").build())
+                .build();
+        java.util.List<MediaItem> resolved = callback.onAddMediaItems(
+                session, controllerInfo, Collections.singletonList(stub)).get(5, TimeUnit.SECONDS);
+        assertEquals(1, resolved.size());
+        android.os.Bundle extras = resolved.get(0).requestMetadata.extras;
+        assertEquals(30_000L, extras.getLong(MediaLibrarySessionCallback.EXTRA_SUMMARY_START));
+        assertEquals(90_000L, extras.getLong(MediaLibrarySessionCallback.EXTRA_SUMMARY_END));
+    }
     private FeedMedia seedEpisode() {
         Feed feed = new Feed("url", null, null);
         feed.setItems(new ArrayList<>());

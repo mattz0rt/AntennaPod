@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
+    <SwitchPreferenceCompat
+            android:defaultValue="true"
+            android:key="prefSummariesEnabled"
+            android:title="@string/summaries_enabled_title"
+            android:summary="@string/summaries_enabled_summary" />
+    <SwitchPreferenceCompat
+            android:defaultValue="true"
+            android:key="prefShowSummaryOnPlay"
+            android:title="@string/show_summary_on_play_title"
+            android:summary="@string/show_summary_on_play_summary"
+            android:dependency="prefSummariesEnabled" />
+    <EditTextPreference
+            android:defaultValue="60"
+            android:dialogTitle="@string/summary_length_title"
+            android:key="prefSummaryLengthSeconds"
+            android:inputType="number"
+            android:title="@string/summary_length_title"
+            android:summary="@string/summary_length_summary"
+            android:dependency="prefSummariesEnabled" />
+    <EditTextPreference
+            android:defaultValue="auto"
+            android:key="prefSummaryProvider"
+            android:title="@string/summary_provider_title"
+            android:summary="@string/summary_provider_summary"
+            android:dependency="prefSummariesEnabled" />
+    <EditTextPreference
+            android:key="prefSummaryPrompt"
+            android:title="@string/summary_prompt_title"
+            android:summary="@string/summary_prompt_summary"
+            android:defaultValue="Summarize this podcast episode in approximately %d seconds of spoken narration. Return strict JSON with a concise summary string and topics, where every topic has a descriptive title and start_seconds timestamp. Use only the supplied content."
+            android:inputType="textMultiLine"
+            android:dependency="prefSummariesEnabled" />
+    <EditTextPreference
+            android:key="prefGroqKey"
+            android:title="@string/groq_key_title"
+            android:summary="@string/groq_key_summary"
+            android:defaultValue=""
+            android:inputType="textPassword"
+            android:dependency="prefSummariesEnabled" />
+    <EditTextPreference
+            android:key="prefGeminiKey"
+            android:title="@string/gemini_key_title"
+            android:summary="@string/gemini_key_summary"
+            android:defaultValue=""
+            android:inputType="textPassword"
+            android:dependency="prefSummariesEnabled" />
+</PreferenceScreen>

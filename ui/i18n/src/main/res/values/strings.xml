@@ -1037,4 +1037,24 @@
     <string name="wearos_play_on_phone" tools:ignore="UnusedResources">Play on phone</string>
     <string name="wearos_browse_phone" tools:ignore="UnusedResources">Browse phone</string>
     <string name="wearos_open_on_phone" tools:ignore="UnusedResources">Open on phone</string>
+    <string name="summaries_settings_title">Episode summaries</string>
+    <string name="summaries_enabled_title">Create episode summaries</string>
+    <string name="summaries_enabled_summary">Generate a narrated summary and topics after downloading an episode</string>
+    <string name="show_summary_on_play_title">Show summary before playback</string>
+    <string name="show_summary_on_play_summary">Open the summary page and play its narration when an episode starts</string>
+    <string name="summary_length_title">Summary narration length (seconds)</string>
+    <string name="summary_length_summary">Target length from 15 to 600 seconds</string>
+    <string name="summary_provider_title">Summary provider</string>
+    <string name="summary_provider_summary">Use auto, groq, or gemini</string>
+    <string name="summary_prompt_title">Summary prompt</string>
+    <string name="summary_prompt_summary">Prompt sent to the configured language model</string>
+    <string name="groq_key_title">Groq API key</string>
+    <string name="groq_key_summary">Used for transcription and summaries</string>
+    <string name="gemini_key_title">Gemini API key</string>
+    <string name="gemini_key_summary">Used when the Gemini provider is selected</string>
+    <string name="summary_topics_title">Topics</string>
+    <string name="summary_close">Close summary and play episode</string>
+    <string name="summary_next">Next podcast</string>
+    <string name="summary_play_topic">Play topic: %1$s</string>
+    <string name="summary_unavailable">Summary is not available yet</string>
 </resources>

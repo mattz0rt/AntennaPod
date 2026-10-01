@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 
 import de.danoeh.antennapod.model.feed.Chapter;
+import de.danoeh.antennapod.model.feed.EpisodeSummary;
 import de.danoeh.antennapod.model.feed.Feed;
 import de.danoeh.antennapod.model.feed.FeedCounter;
 import de.danoeh.antennapod.model.feed.FeedItem;
@@ -505,6 +506,17 @@ public final class DBReader {
             FeedItem item = itemCursor.getFeedItem();
             loadFeedDataOfFeedItemList(Collections.singletonList(item));
             return item.getMedia();
+        } finally {
+            adapter.close();
+        }
+    }
+
+    @Nullable
+    public static synchronized EpisodeSummary getEpisodeSummary(long itemId) {
+        PodDBAdapter adapter = PodDBAdapter.getInstance();
+        adapter.open();
+        try {
+            return adapter.getEpisodeSummary(itemId);
         } finally {
             adapter.close();
         }

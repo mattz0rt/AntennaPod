@@ -22,6 +22,11 @@
             android:title="@string/playback_pref"
             android:summary="@string/playback_pref_sum"
             android:icon="@drawable/ic_play_24dp" />
+    <Preference
+            android:key="prefScreenSummaries"
+            android:title="@string/summaries_settings_title"
+            android:summary="@string/summaries_enabled_summary"
+            android:icon="@drawable/ic_play_24dp" />
 
     <Preference
             android:key="prefScreenDownloads"

@@ -123,6 +123,23 @@ public abstract class UserPreferences {
     private static final String PREF_REWIND_SECS = "prefRewindSecs";
     private static final String PREF_QUEUE_LOCKED = "prefQueueLocked";
 
+    // Episode summaries
+    public static final String PREF_SUMMARIES_ENABLED = "prefSummariesEnabled";
+    public static final String PREF_SUMMARY_LENGTH_SECONDS = "prefSummaryLengthSeconds";
+    public static final String PREF_SUMMARY_PROMPT = "prefSummaryPrompt";
+    public static final String PREF_SUMMARY_PROVIDER = "prefSummaryProvider";
+    public static final String PREF_GROQ_KEY = "prefGroqKey";
+    public static final String PREF_GEMINI_KEY = "prefGeminiKey";
+    public static final String PREF_SHOW_SUMMARY_ON_PLAY = "prefShowSummaryOnPlay";
+    public static final int DEFAULT_SUMMARY_LENGTH_SECONDS = 60;
+    public static final String DEFAULT_SUMMARY_PROVIDER = "auto";
+    public static final String DEFAULT_GROQ_KEY = "";
+    public static final String DEFAULT_GEMINI_KEY = "";
+    public static final String DEFAULT_SUMMARY_PROMPT =
+            "Summarize this podcast episode in approximately %d seconds of spoken narration. "
+                    + "Return strict JSON with a concise summary string and topics, where every topic "
+                    + "has a descriptive title and start_seconds timestamp. Use only the supplied content.";
+
     // Experimental
     public static final int EPISODE_CLEANUP_QUEUE = -1;
     public static final int EPISODE_CLEANUP_NULL = -2;
@@ -888,5 +905,47 @@ public abstract class UserPreferences {
 
     public static void setPrefFilterAllEpisodes(String filter) {
         prefs.edit().putString(PREF_FILTER_ALL_EPISODES, filter).apply();
+    }
+
+    public static boolean areEpisodeSummariesEnabled() {
+        return prefs.getBoolean(PREF_SUMMARIES_ENABLED, true);
+    }
+
+    public static void setEpisodeSummariesEnabled(boolean enabled) {
+        prefs.edit().putBoolean(PREF_SUMMARIES_ENABLED, enabled).apply();
+    }
+
+    public static int getSummaryLengthSeconds() {
+        String value = prefs.getString(PREF_SUMMARY_LENGTH_SECONDS,
+                String.valueOf(DEFAULT_SUMMARY_LENGTH_SECONDS));
+        try {
+            return Math.max(15, Math.min(600, Integer.parseInt(value)));
+        } catch (NumberFormatException e) {
+            return DEFAULT_SUMMARY_LENGTH_SECONDS;
+        }
+    }
+
+    @NonNull
+    public static String getSummaryPrompt() {
+        return prefs.getString(PREF_SUMMARY_PROMPT, DEFAULT_SUMMARY_PROMPT);
+    }
+
+    @NonNull
+    public static String getSummaryProvider() {
+        return prefs.getString(PREF_SUMMARY_PROVIDER, DEFAULT_SUMMARY_PROVIDER);
+    }
+
+    @NonNull
+    public static String getGroqKey() {
+        return prefs.getString(PREF_GROQ_KEY, DEFAULT_GROQ_KEY);
+    }
+
+    @NonNull
+    public static String getGeminiKey() {
+        return prefs.getString(PREF_GEMINI_KEY, DEFAULT_GEMINI_KEY);
+    }
+
+    public static boolean showSummaryOnPlay() {
+        return prefs.getBoolean(PREF_SHOW_SUMMARY_ON_PLAY, true);
     }
 }

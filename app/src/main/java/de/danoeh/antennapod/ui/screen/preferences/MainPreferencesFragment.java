@@ -19,6 +19,7 @@ import de.danoeh.antennapod.ui.preferences.screen.bugreport.BugReportFragment;
 public class MainPreferencesFragment extends AnimatedPreferenceFragment {
 
     private static final String PREF_SCREEN_USER_INTERFACE = "prefScreenInterface";
+    private static final String PREF_SCREEN_SUMMARIES = "prefScreenSummaries";
     private static final String PREF_SCREEN_PLAYBACK = "prefScreenPlayback";
     private static final String PREF_SCREEN_DOWNLOADS = "prefScreenDownloads";
     private static final String PREF_SCREEN_IMPORT_EXPORT = "prefScreenImportExport";
@@ -77,6 +78,10 @@ public class MainPreferencesFragment extends AnimatedPreferenceFragment {
         });
         findPreference(PREF_SCREEN_PLAYBACK).setOnPreferenceClickListener(preference -> {
             ((PreferenceActivity) getActivity()).openScreen(R.xml.preferences_playback);
+            return true;
+        });
+        findPreference(PREF_SCREEN_SUMMARIES).setOnPreferenceClickListener(preference -> {
+            ((PreferenceActivity) getActivity()).openScreen(R.xml.preferences_summaries);
             return true;
         });
         findPreference(PREF_SCREEN_DOWNLOADS).setOnPreferenceClickListener(preference -> {

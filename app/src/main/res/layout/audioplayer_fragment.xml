@@ -283,4 +283,8 @@
 
     </RelativeLayout>
 
+    <include
+        android:id="@+id/summary_overlay"
+        layout="@layout/summary_overlay"
+        android:visibility="gone" />
 </FrameLayout>
