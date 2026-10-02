@@ -101,6 +101,11 @@ public abstract class UserPreferences {
     public static final String PREF_AUTODL_GLOBAL = "prefEnableAutoDl";
     public static final String PREF_AUTODL_QUEUE = "prefEnableAutoDlQueue";
     public static final String PREF_ENABLE_AUTODL_ON_BATTERY = "prefEnableAutoDownloadOnBattery";
+    public static final String PREF_AUTODL_TIME_ENABLED = "prefAutodownloadTimeEnabled";
+    public static final String PREF_AUTODL_TIME_FROM = "prefAutodownloadTimeFrom";
+    public static final String PREF_AUTODL_TIME_TO = "prefAutodownloadTimeTo";
+    public static final int DEFAULT_AUTODL_TIME_FROM = 120;
+    public static final int DEFAULT_AUTODL_TIME_TO = 300;
     private static final String PREF_PROXY_TYPE = "prefProxyType";
     private static final String PREF_PROXY_HOST = "prefProxyHost";
     private static final String PREF_PROXY_PORT = "prefProxyPort";
@@ -570,6 +575,26 @@ public abstract class UserPreferences {
 
     public static boolean isEnableAutodownloadOnBattery() {
         return prefs.getBoolean(PREF_ENABLE_AUTODL_ON_BATTERY, true);
+    }
+
+    public static boolean isAutodownloadTimeRestricted() {
+        return prefs.getBoolean(PREF_AUTODL_TIME_ENABLED, false);
+    }
+
+    public static int getAutodownloadTimeFrom() {
+        return prefs.getInt(PREF_AUTODL_TIME_FROM, DEFAULT_AUTODL_TIME_FROM);
+    }
+
+    public static int getAutodownloadTimeTo() {
+        return prefs.getInt(PREF_AUTODL_TIME_TO, DEFAULT_AUTODL_TIME_TO);
+    }
+
+    public static void setAutodownloadTime(boolean enabled, int fromMinutes, int toMinutes) {
+        prefs.edit()
+                .putBoolean(PREF_AUTODL_TIME_ENABLED, enabled)
+                .putInt(PREF_AUTODL_TIME_FROM, fromMinutes)
+                .putInt(PREF_AUTODL_TIME_TO, toMinutes)
+                .apply();
     }
 
     public static int getFastForwardSecs() {

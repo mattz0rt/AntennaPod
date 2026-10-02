@@ -535,6 +535,10 @@
     <string name="pref_automatic_download_sum">Configure the automatic download of episodes</string>
     <string name="pref_automatic_download_on_battery_title">Download when not charging</string>
     <string name="pref_automatic_download_on_battery_sum">Allow automatic download when the battery is not charging</string>
+    <string name="pref_automatic_download_time_title">Only download at certain times</string>
+    <string name="pref_automatic_download_time_sum">Pause automatic downloads outside the selected time window</string>
+    <string name="pref_automatic_download_time_from_title">Download window start</string>
+    <string name="pref_automatic_download_time_to_title">Download window end</string>
     <string name="pref_episode_cache_title">Episode limit</string>
     <string name="pref_episode_cache_summary">Automatic download is stopped if this number is reached</string>
     <string name="pref_episode_cover_title">Use episode cover</string>

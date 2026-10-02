@@ -23,4 +23,17 @@
             android:title="@string/pref_automatic_download_on_battery_title"
             android:summary="@string/pref_automatic_download_on_battery_sum"
             android:defaultValue="true"/>
+    <SwitchPreferenceCompat
+            android:key="prefAutodownloadTimeEnabled"
+            android:title="@string/pref_automatic_download_time_title"
+            android:summary="@string/pref_automatic_download_time_sum"
+            android:defaultValue="false"/>
+    <Preference
+            android:key="prefAutodownloadTimeFrom"
+            android:title="@string/pref_automatic_download_time_from_title"
+            android:dependency="prefAutodownloadTimeEnabled"/>
+    <Preference
+            android:key="prefAutodownloadTimeTo"
+            android:title="@string/pref_automatic_download_time_to_title"
+            android:dependency="prefAutodownloadTimeEnabled"/>
 </PreferenceScreen>

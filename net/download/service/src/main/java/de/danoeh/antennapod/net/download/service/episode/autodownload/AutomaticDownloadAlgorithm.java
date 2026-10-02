@@ -39,14 +39,11 @@ public class AutomaticDownloadAlgorithm {
     public Runnable autoDownloadUndownloadedItems(final Context context) {
         return () -> {
 
-            // true if we should auto download based on network status
             boolean networkShouldAutoDl = NetworkUtils.isAutoDownloadAllowed();
-
-            // true if we should auto download based on power status
             boolean powerShouldAutoDl = deviceCharging(context) || UserPreferences.isEnableAutodownloadOnBattery();
+            boolean timeShouldAutoDl = isInAutodownloadWindow(java.util.Calendar.getInstance());
 
-            // we should only auto download if both network AND power are happy
-            if (networkShouldAutoDl && powerShouldAutoDl) {
+            if (networkShouldAutoDl && powerShouldAutoDl && timeShouldAutoDl) {
 
                 Log.d(TAG, "Performing auto-dl of undownloaded episodes");
 
@@ -111,17 +108,27 @@ public class AutomaticDownloadAlgorithm {
         };
     }
 
-    /**
-     * @return true if the device is charging
-     */
+    static boolean isInAutodownloadWindow(java.util.Calendar now) {
+        if (!UserPreferences.isAutodownloadTimeRestricted()) {
+            return true;
+        }
+        int current = now.get(java.util.Calendar.HOUR_OF_DAY) * 60 + now.get(java.util.Calendar.MINUTE);
+        int from = UserPreferences.getAutodownloadTimeFrom();
+        int to = UserPreferences.getAutodownloadTimeTo();
+        if (from == to) {
+            return false;
+        }
+        if (from < to) {
+            return from <= current && current < to;
+        }
+        return current >= from || current < to;
+    }
+
     public static boolean deviceCharging(Context context) {
-        // from http://developer.android.com/training/monitoring-device-state/battery-monitoring.html
-        IntentFilter intentFilter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
-        Intent batteryStatus = context.registerReceiver(null, intentFilter);
-
+        Intent batteryStatus = context.registerReceiver(null,
+                new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
         int status = batteryStatus.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
-        return (status == BatteryManager.BATTERY_STATUS_CHARGING
-                || status == BatteryManager.BATTERY_STATUS_FULL);
-
+        return status == BatteryManager.BATTERY_STATUS_CHARGING
+                || status == BatteryManager.BATTERY_STATUS_FULL;
     }
 }
